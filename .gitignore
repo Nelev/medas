@@ -1,0 +1,37 @@
+# Repo-wide rules. medas-api/.gitignore and medas-ui/.gitignore each cover what
+# their own toolchain produces (uv and Python output; node_modules and .next).
+# This file covers what neither owns: secrets, machine and editor cruft, and
+# tool caches that can appear anywhere in the tree.
+
+# Secrets. Both packages ignore their own .env; this catches one written at the
+# root, and the dotenv variants. A checked-in template stays visible.
+.env
+.env.*
+!.env.example
+
+# Editor and IDE state.
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*~
+
+# OS metadata. Desktop.ini and Thumbs.db come from Windows Explorer, .DS_Store
+# from Finder - either can land in any directory.
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python caches. medas-api ignores __pycache__ and build output, but not the
+# test and linter caches, which are written at whatever directory the tool is
+# invoked from - the repo root included.
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node, for a dev server or tool run from the root rather than inside medas-ui.
+node_modules/
+*.tsbuildinfo
