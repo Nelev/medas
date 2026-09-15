@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import dispose_engine, get_session, init_engine
+from database.database import dispose_engine, get_session, init_engine
 
 
 @asynccontextmanager

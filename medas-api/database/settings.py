@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
 
-class Settings(BaseSettings):
+class DbSettings(BaseSettings):
     """Application settings, read from the environment or .env."""
 
     model_config = SettingsConfigDict(
@@ -41,8 +41,8 @@ class Settings(BaseSettings):
 
 
 @lru_cache
-def get_settings() -> Settings:
+def get_settings() -> DbSettings:
     # database_password has no default, so pyright sees a missing argument.
     # It is supplied at runtime from the environment or .env, which the type
     # checker cannot see. Raises ValidationError if it is genuinely absent.
-    return Settings()  # pyright: ignore[reportCallIssue]
+    return DbSettings()  # pyright: ignore[reportCallIssue]

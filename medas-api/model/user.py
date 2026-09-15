@@ -1,20 +1,4 @@
-"""ORM models.
-
-Every model must subclass ``Base`` and live in (or be imported into) this
-module, since Alembic's autogenerate only sees what ``Base.metadata`` knows
-about.
-
-Once pgvector is installed, embedding columns look like::
-
-    from pgvector.sqlalchemy import Vector
-
-    class Chunk(Base):
-        __tablename__ = "chunk"
-
-        id: Mapped[int] = mapped_column(primary_key=True)
-        content: Mapped[str]
-        embedding: Mapped[list[float]] = mapped_column(Vector(1536))
-"""
+"""The user model."""
 
 import datetime
 import enum
@@ -23,9 +7,9 @@ import uuid
 from sqlalchemy import DateTime, Enum, String, Uuid, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db import Base
+from database.database import Base
 
-__all__ = ["Base", "User", "UserRole"]
+__all__ = ["User", "UserRole"]
 
 
 class UserRole(enum.StrEnum):

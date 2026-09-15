@@ -7,9 +7,9 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Imported for the side effect of registering models on Base.metadata.
-import app.models  # noqa: F401
-from app.config import get_settings
-from app.db import Base
+import model  # noqa: F401
+from database.database import Base
+from database.settings import get_settings
 
 config = context.config
 
