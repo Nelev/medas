@@ -1,0 +1,20 @@
+# Pin line endings to LF in the working tree, not just in the repository.
+#
+# The blobs are stored as LF, but core.autocrlf converts them to CRLF on
+# checkout. ESLint, Prettier and the Python formatters all write LF, so after a
+# branch switch the checkout and the formatter disagree: the linter reports
+# errors, --write rewrites the files, and git then lists them as modified with
+# no content change. eol=lf makes the checkout match what the tools produce.
+* text=auto eol=lf
+
+# Collapse lockfiles in GitHub diffs. Deliberately not marked -diff, so local
+# `git diff` still shows them - a lockfile change is worth being able to read.
+yarn.lock linguist-generated=true
+uv.lock   linguist-generated=true
+
+# Binary assets: never convert, never diff.
+*.ico   binary
+*.png   binary
+*.jpg   binary
+*.pdf   binary
+*.woff2 binary
