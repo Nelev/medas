@@ -5,5 +5,53 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "alembic>=1.20.0",
+    "asyncpg>=0.31.0",
     "fastapi[standard]>=0.141.1",
+    "pgvector>=0.5.0",
+    "psycopg[binary,pool]>=3.3.5",
+    "pydantic-settings>=2.15.0",
+    "sqlalchemy[asyncio]>=2.0.53",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.7",
+]
+
+[tool.ruff]
+# target-version is inferred from project.requires-python (>=3.14).
+# Alembic's generated scaffolding is ours to lint too, so nothing is excluded.
+
+[tool.ruff.lint]
+# Selected explicitly rather than relying on defaults: ruff's default rule set
+# changes between releases, and pinning the selection keeps results stable.
+select = [
+    "F",     # pyflakes
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "I",     # import sorting
+    "UP",    # pyupgrade
+    "B",     # bugbear
+    "ASYNC", # blocking calls inside async functions
+    "S",     # security (bandit)
+    "SIM",   # simplifications
+    "RUF",   # ruff-specific
+]
+ignore = [
+    "E501", # line length is the formatter's job
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Migrations are generated-ish and deliberately imperative.
+"migrations/versions/*.py" = ["D"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.pyright]
+# Pylance/pyright cannot auto-discover .venv when the workspace root is the
+# repo rather than medas-api/. Without this, third-party imports resolve to
+# Unknown, which surfaces as reportInvalidTypeForm on Annotated aliases.
+venvPath = "."
+venv = ".venv"
