@@ -34,7 +34,7 @@ export default function Home() {
       <header className="shrink-0 border-b px-4 py-3 sm:px-6">
         <h1 className="text-sm font-medium">Medas</h1>
         <p className="text-xs text-muted-foreground">
-          Domain assistant for your documents
+          Personal medical assistant
         </p>
       </header>
 

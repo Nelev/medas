@@ -1,4 +1,4 @@
-import { Bot, User } from "lucide-react"
+import { Stethoscope , User } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
@@ -23,11 +23,11 @@ export function ChatMessage({ role, content }: ChatMessageProps) {
       )}
     >
       <Avatar className="size-8 shrink-0">
-        <AvatarFallback className="bg-muted text-muted-foreground">
+        <AvatarFallback className="bg-muted-foreground text-muted">
           {isUser ? (
             <User className="size-4" aria-hidden />
           ) : (
-            <Bot className="size-4" aria-hidden />
+            <Stethoscope className="size-4" aria-hidden />
           )}
         </AvatarFallback>
       </Avatar>
