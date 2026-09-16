@@ -6,25 +6,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 // Placeholder content only -- nothing here is wired to the API yet.
-const MESSAGES: ChatMessageProps[] = [
-  {
-    role: "assistant",
-    content: "Hi! Ask me anything about the documents in your workspace.",
-  },
-  {
-    role: "user",
-    content: "What did the Q3 report say about churn?",
-  },
-  {
-    role: "assistant",
-    content:
-      "Churn rose to 4.2% in Q3, up from 3.6% in Q2. The report attributes most of the increase to the self-serve tier, where trial-to-paid conversion also slipped. Enterprise retention was flat.",
-  },
-  {
-    role: "user",
-    content: "Which section covers the enterprise numbers?",
-  },
-]
+const MESSAGES: ChatMessageProps[] = []
 
 export default function Home() {
   return (
