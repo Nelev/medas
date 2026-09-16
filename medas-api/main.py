@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.database import dispose_engine, get_session, init_engine
+from schema import MessageRequest
 
 
 @asynccontextmanager
@@ -31,9 +32,12 @@ def read_root():
     return {"Hello": "World"}
 
 
-@app.get("/items/{item_id}")
-def read_item(item_id: int, q: str | None = None):
-    return {"item_id": item_id, "q": q}
+@app.post("/messages")
+def create_message(message_request: MessageRequest):
+    return {
+        "user_name": message_request.user_name,
+        "message": message_request.message,
+    }
 
 
 @app.get("/health/db")
