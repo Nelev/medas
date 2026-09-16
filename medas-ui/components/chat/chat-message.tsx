@@ -1,7 +1,12 @@
-import { Stethoscope , User } from "lucide-react"
+import { Stethoscope, User } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { cn } from "@/lib/utils"
+import { Bubble, BubbleContent } from "@/components/ui/bubble"
+import {
+  Message,
+  MessageAvatar,
+  MessageContent,
+} from "@/components/ui/message"
 
 export type ChatRole = "user" | "assistant"
 
@@ -12,39 +17,29 @@ export interface ChatMessageProps {
 
 export function ChatMessage({ role, content }: ChatMessageProps) {
   const isUser = role === "user"
+  const RoleIcon = isUser ? User : Stethoscope
 
   return (
-    <div
-      className={cn(
-        "flex w-full items-start gap-2 sm:gap-3",
-        // Reversing the row is what moves the user's messages to the right,
-        // so the bubble and avatar stay in one markup order.
-        isUser && "flex-row-reverse",
-      )}
-    >
-      <Avatar className="size-8 shrink-0">
-        <AvatarFallback className="bg-muted-foreground text-muted">
-          {isUser ? (
-            <User className="size-4" aria-hidden />
-          ) : (
-            <Stethoscope className="size-4" aria-hidden />
-          )}
-        </AvatarFallback>
-      </Avatar>
-
-      <div
-        className={cn(
-          // Capped width so a long message wraps into a column instead of
-          // stretching the full width of a desktop viewport.
-          "max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
-          isUser
-            ? "rounded-br-sm bg-primary text-primary-foreground"
-            : "rounded-bl-sm bg-muted text-foreground",
-        )}
-      >
-        {/* break-words stops an unbroken URL from forcing a horizontal scrollbar. */}
-        <p className="whitespace-pre-wrap break-words">{content}</p>
-      </div>
-    </div>
+    // Rendered with no wrapper element: the list already spaces rows with
+    // `gap`, and Message is w-full. A max-width at this level clamps every
+    // row -- max-w-sm against the shell's max-w-3xl is what pinned messages
+    // to the left half.
+    <Message align={isUser ? "end" : "start"}>
+      <MessageAvatar>
+        <Avatar>
+          {/* Icons rather than an image: role is the only thing to convey,
+              and there are no avatar assets in public/. */}
+          <AvatarFallback>
+            <RoleIcon className="size-4" aria-hidden="true" />
+            <span className="sr-only">{isUser ? "You" : "Assistant"}</span>
+          </AvatarFallback>
+        </Avatar>
+      </MessageAvatar>
+      <MessageContent>
+        <Bubble variant={isUser ? "default" : "muted"}>
+          <BubbleContent>{content}</BubbleContent>
+        </Bubble>
+      </MessageContent>
+    </Message>
   )
 }
