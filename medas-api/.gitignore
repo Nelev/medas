@@ -9,3 +9,7 @@ wheels/
 # Virtual environments
 .venv
 .env
+
+# Local vector store written by rag_pipeline/embeddings.py. Rebuildable from
+# medical_history.json, and a binary SQLite DB plus HNSW index besides.
+rag_pipeline/chroma/
