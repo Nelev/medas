@@ -7,10 +7,13 @@ requires-python = ">=3.14"
 dependencies = [
     "alembic>=1.20.0",
     "asyncpg>=0.31.0",
+    "chromadb>=1.5.9",
     "fastapi[standard]>=0.141.1",
+    "openai>=3.14.1",
     "pgvector>=0.5.0",
     "psycopg[binary,pool]>=3.3.5",
     "pydantic-settings>=2.15.0",
+    "python-dotenv>=1.2.3",
     "sqlalchemy[asyncio]>=2.0.53",
 ]
 
@@ -45,9 +48,6 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Migrations are generated-ish and deliberately imperative.
 "migrations/versions/*.py" = ["D"]
-
-[tool.ruff.lint.isort]
-known-first-party = ["app"]
 
 [tool.pyright]
 # Pylance/pyright cannot auto-discover .venv when the workspace root is the

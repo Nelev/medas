@@ -1,0 +1,166 @@
+{
+  "id": "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0",
+  "name": "Mattia Smacchia",
+  "dob": "1980-06-07",
+  "sex": "male",
+  "episodes": [
+    {
+      "episode_id": "ep_01",
+      "date": "1986-11-02",
+      "type": "diagnosis",
+      "setting": "primary_care",
+      "description": "Age 6: recurrent nocturnal cough and wheeze following viral upper respiratory infections, with symptoms reproducibly triggered by exercise and cold air. Skin prick testing positive to house dust mite and grass pollen; family history of atopy (mother with allergic rhinitis). Diagnosed with childhood atopic asthma and started on inhaled salbutamol as required plus low-dose inhaled corticosteroid."
+    },
+    {
+      "episode_id": "ep_02",
+      "date": "1998-06-20",
+      "type": "clinical_course",
+      "setting": "primary_care",
+      "description": "Age 18: symptoms largely quiescent for several years; preventer therapy self-discontinued and reliever used only occasionally during pollen season. Smoked socially between ages 19 and 23, approximately 3 pack-years total, ceased completely. Considered to be in clinical remission at this point."
+    },
+    {
+      "episode_id": "ep_03",
+      "date": "2011-02-17",
+      "type": "relapse",
+      "setting": "primary_care",
+      "description": "Age 30: asthma recurred after an influenza-like illness, with persistent daily wheeze, chest tightness and reliever use 4-5 times weekly. Spirometry showed FEV1 72% predicted with 16% and 280 mL reversibility post-bronchodilator, confirming variable airflow obstruction. Restarted on regular inhaled corticosteroid/long-acting beta-agonist combination therapy."
+    },
+    {
+      "episode_id": "ep_04",
+      "date": "2016-09-08",
+      "type": "adverse_drug_reaction",
+      "setting": "emergency_department",
+      "description": "Acute bronchospasm, profuse rhinorrhoea and facial flushing approximately 45 minutes after taking ibuprofen 400 mg for back pain. Managed with nebulised salbutamol and ipratropium plus oral prednisolone; no adrenaline required. In the context of known chronic rhinosinusitis with nasal polyps, this completed the picture of aspirin-exacerbated respiratory disease (AERD/Samter's triad), and all NSAIDs were formally contraindicated from this point."
+    },
+    {
+      "episode_id": "ep_05",
+      "date": "2019-01-22",
+      "type": "hospital_admission",
+      "setting": "inpatient",
+      "description": "Severe exacerbation precipitated by rhinovirus infection, presenting with peak flow 41% of personal best, SpO2 91% on air and inability to complete sentences. Admitted for 4 days on controlled oxygen, back-to-back nebulisers, IV magnesium sulphate and a 7-day prednisolone course; no ventilatory support required. Fourth oral corticosteroid burst in 12 months, prompting referral to the severe asthma service."
+    },
+    {
+      "episode_id": "ep_06",
+      "date": "2021-05-13",
+      "type": "surgical_procedure",
+      "setting": "outpatient_surgery",
+      "description": "Functional endoscopic sinus surgery with bilateral polypectomy for refractory nasal polyposis causing anosmia and persistent nasal obstruction. Good early symptomatic response with partial recovery of smell, though polyps had begun to recur radiologically by 2023. Maintained on intranasal corticosteroid and saline irrigation postoperatively."
+    },
+    {
+      "episode_id": "ep_07",
+      "date": "2023-04-05",
+      "type": "treatment_escalation",
+      "setting": "specialist_clinic",
+      "description": "Assessed in severe asthma clinic with blood eosinophil count 620 cells/µL, total IgE 210 IU/mL, FeNO 58 ppb and ACT score 13 despite good inhaler technique and verified adherence. Aspergillus-specific IgE negative, excluding allergic bronchopulmonary aspergillosis. Classified as severe eosinophilic asthma (GINA Step 5) and commenced on mepolizumab with the aim of reducing oral corticosteroid exposure."
+    },
+    {
+      "episode_id": "ep_08",
+      "date": "2024-10-19",
+      "type": "investigation",
+      "setting": "outpatient",
+      "description": "HRCT chest performed for chronic productive cough persisting between exacerbations, showing mild cylindrical bronchiectasis confined to the right middle lobe with associated bronchial wall thickening. Sputum culture grew Haemophilus influenzae, treated with a 14-day course of co-amoxiclav. Referred to respiratory physiotherapy for airway clearance technique training."
+    },
+    {
+      "episode_id": "ep_09",
+      "date": "2025-12-03",
+      "type": "exacerbation",
+      "setting": "primary_care",
+      "description": "Moderate exacerbation during an influenza A outbreak despite vaccination, managed in the community with a 5-day prednisolone course and increased maintenance-and-reliever dosing. Peak flow recovered to baseline within 10 days without hospital attendance. Only oral corticosteroid course required in the preceding 24 months, representing a marked reduction since starting biologic therapy."
+    },
+    {
+      "episode_id": "ep_10",
+      "date": "2026-07-28",
+      "type": "routine_review",
+      "setting": "specialist_clinic",
+      "description": "Annual severe asthma review: ACT score 21, FEV1 84% predicted, blood eosinophils suppressed at 90 cells/µL, no exacerbations in the preceding 7 months. Reports good tolerance of mepolizumab with mild injection-site reactions only. Plan is to continue current regimen, maintain airway clearance for the bronchiectasis, and review in 12 months."
+    }
+  ],
+  "allergies": [
+    {
+      "substance": "Ibuprofen (and all NSAIDs, including aspirin)",
+      "type": "drug_hypersensitivity",
+      "reaction": "Acute bronchospasm, rhinorrhoea, flushing",
+      "severity": "severe",
+      "status": "active_confirmed",
+      "onset_date": "2016-09-08"
+    },
+    {
+      "substance": "House dust mite (Dermatophagoides pteronyssinus)",
+      "type": "environmental",
+      "reaction": "Perennial rhinitis, wheeze",
+      "severity": "moderate",
+      "status": "active_confirmed",
+      "onset_date": "1986-11-02"
+    },
+    {
+      "substance": "Grass pollen",
+      "type": "environmental",
+      "reaction": "Seasonal rhinoconjunctivitis, asthma symptom deterioration May–July",
+      "severity": "moderate",
+      "status": "active_confirmed",
+      "onset_date": "1986-11-02"
+    }
+  ],
+  "current_medication": [
+    {
+      "name": "Budesonide/formoterol",
+      "strength": "200/6 µg per inhalation",
+      "form": "dry powder inhaler",
+      "dose": "2 inhalations twice daily, plus 1 inhalation as required for symptom relief (MART regimen)",
+      "indication": "Severe persistent asthma — maintenance and reliever therapy",
+      "started": "2011-02-17"
+    },
+    {
+      "name": "Mepolizumab",
+      "strength": "100 mg",
+      "form": "subcutaneous injection",
+      "dose": "100 mg every 4 weeks",
+      "indication": "Add-on therapy for severe eosinophilic asthma; anti-IL-5 monoclonal antibody",
+      "started": "2023-04-05"
+    }
+  ],
+  "pathologies": [
+    {
+      "condition": "Severe eosinophilic asthma",
+      "icd10": "J45.50",
+      "status": "active",
+      "diagnosed": "1986-11-02",
+      "notes": "Childhood-onset atopic asthma, remission in adolescence, relapse in adulthood with progression to GINA Step 5 severe eosinophilic phenotype."
+    },
+    {
+      "condition": "Aspirin-exacerbated respiratory disease (AERD)",
+      "icd10": "J45.909",
+      "status": "active",
+      "diagnosed": "2016-09-08",
+      "notes": "Triad of asthma, nasal polyposis and NSAID hypersensitivity. Drives both the airway and sinonasal disease burden."
+    },
+    {
+      "condition": "Chronic rhinosinusitis with nasal polyps",
+      "icd10": "J33.9",
+      "status": "active",
+      "diagnosed": "2014-06-11",
+      "notes": "Post-surgical recurrence from 2023; united-airway comorbidity contributing to asthma control."
+    },
+    {
+      "condition": "Bronchiectasis, right middle lobe",
+      "icd10": "J47.9",
+      "status": "active",
+      "diagnosed": "2024-10-19",
+      "notes": "Mild cylindrical changes, likely post-infective. Intermittent H. influenzae colonisation; managed with airway clearance."
+    },
+    {
+      "condition": "Allergic rhinitis",
+      "icd10": "J30.1",
+      "status": "active",
+      "diagnosed": "1986-11-02",
+      "notes": "Perennial with seasonal exacerbation."
+    },
+    {
+      "condition": "Gastro-oesophageal reflux disease",
+      "icd10": "K21.9",
+      "status": "active",
+      "diagnosed": "2018-03-27",
+      "notes": "Recognised aggravating factor for asthma control; nocturnal symptoms."
+    }
+  ]
+}
