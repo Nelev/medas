@@ -41,7 +41,10 @@ def get_embeddings_batch(inputs, model="openai/text-embedding-3-small"):
 
 
 
-chunks = list(iter_chunks(document))
-print("Chunks generated:", len(chunks))
-embeddings = get_embeddings_batch([chunk["text"] for chunk in chunks])
-print("Embeddings generated:", len(embeddings), "vectors, dim", len(embeddings[0]))
+if __name__ == "__main__":
+    # Guarded: this makes a billable API call, so it must not fire
+    # merely because something imported this module.
+    chunks = list(iter_chunks(document))
+    print("Chunks generated:", len(chunks))
+    embeddings = get_embeddings_batch([chunk["text"] for chunk in chunks])
+    print("Embeddings generated:", len(embeddings), "vectors, dim", len(embeddings[0]))
