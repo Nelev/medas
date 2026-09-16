@@ -6,7 +6,16 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 // Placeholder content only -- nothing here is wired to the API yet.
-const MESSAGES: ChatMessageProps[] = []
+const MESSAGES: ChatMessageProps[] = [
+  {
+    role: "assistant",
+    content: "Hello, how can I help you today?",
+  },
+  {
+    role: "user",
+    content: "Share my clinical notes",
+  },
+]
 
 export default function Home() {
   return (
@@ -25,11 +34,10 @@ export default function Home() {
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-4 px-4 py-6 sm:gap-6 sm:px-6">
           {MESSAGES.map((message, index) => (
-            <ChatMessage key={index} {...message} />
+            <ChatMessage key={index} role={message.role} content={message.content} />
           ))}
         </div>
       </ScrollArea>
-
       <footer className="bg-background shrink-0 border-t px-4 py-3 sm:px-6">
         <ChatComposer />
       </footer>
