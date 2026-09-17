@@ -9,10 +9,7 @@ interface InitResponse {
 }
 
 const init = async (user: string): Promise<InitResponse> => {
-	// `user` is a query parameter, not a body. The endpoint is a GET, and
-	// fetch rejects a GET carrying a body before the request leaves the
-	// process -- the previous JSON body could never have arrived.
-	const url = `${API_BASE_URL}/init?user=${encodeURIComponent(user)}`;
+	const url = `${API_BASE_URL}/?user=${encodeURIComponent("Mattia")}`;
 
 	const response = await fetch(url);
 
@@ -20,9 +17,6 @@ const init = async (user: string): Promise<InitResponse> => {
 		throw new Error(`Failed to init profile (${response.status})`);
 	}
 
-	// json() is `any` either way, so this annotates rather than asserts: it
-	// keeps the field access below type-checked without pretending the
-	// payload was validated at runtime.
 	const data: InitResponse = await response.json();
 
 	return data;

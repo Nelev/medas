@@ -4,13 +4,14 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.database import dispose_engine, get_session, init_engine
 from model import append_message, create_conversation, greeting_text
-from schema import MessageRequest, NewConversation, NewMessage
+from schema import MessageRequest, NewMessage
 
 
 @asynccontextmanager
@@ -29,6 +30,16 @@ app = FastAPI(lifespan=lifespan)
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
+origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.post("/messages")
 def create_message(message_request: MessageRequest):
@@ -46,14 +57,14 @@ def init_user_profile(user: str):
 
 
 @app.post("/conversations", status_code=201)
-async def start_conversation(new_conversation: NewConversation, session: SessionDep):
+async def start_conversation(message: NewMessage, userId: str, session: SessionDep):
     try:
         conversation_id, messages = await create_conversation(
             session,
-            new_conversation.user_id,
-            new_conversation.user,
-            new_conversation.role,
-            new_conversation.text,
+            userId,
+            "Mattia",
+            message.role,
+            message.text,
         )
     except IntegrityError as exc:
         # The only constraint here is the user_id FK.
