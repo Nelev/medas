@@ -2,8 +2,9 @@ import json
 from pathlib import Path
 
 import chromadb
-from chunks import iter_chunks
-from embeddings import get_embedding, get_embeddings_batch
+
+from rag_pipeline.chunks import iter_chunks
+from rag_pipeline.embeddings import get_embedding, get_embeddings_batch
 
 MEDICAL_HISTORY_PATH = Path(__file__).parent / "medical_history.json"
 CHROMA_PATH = Path(__file__).parent / "chroma"
