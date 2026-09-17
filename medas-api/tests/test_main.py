@@ -107,6 +107,34 @@ async def test_create_message_rejects_a_non_string_message(client):
     assert response.status_code == 422
 
 
+async def test_init_greets_the_user(client):
+    response = await client.get("/init", params={"user": "mattia"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "messages": [{"role": "assistant", "text": "Hi mattia, how can I help you?"}]
+    }
+
+
+async def test_init_requires_the_user_query_parameter(client):
+    # `user` is a bare str with no default, so FastAPI makes it a required
+    # query param. This pins that omitting it is a 422 and not a 500.
+    response = await client.get("/init")
+
+    assert response.status_code == 422
+
+
+async def test_init_interpolates_the_user_verbatim(client):
+    # The UI sends an opaque patient id rather than a display name, and
+    # percent-encodes it on the way out. This pins that it survives the round
+    # trip intact instead of arriving mangled into the greeting.
+    user = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
+
+    response = await client.get("/init", params={"user": user})
+
+    assert response.json()["messages"][0]["text"] == f"Hi {user}, how can I help you?"
+
+
 async def test_health_db_reports_the_server_version(client, fake_session):
     response = await client.get("/health/db")
 

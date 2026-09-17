@@ -7,15 +7,9 @@ import {
   MessageAvatar,
   MessageContent,
 } from "@/components/ui/message"
+import { ChatMessageProps } from "@/model/ChatMessage"
 
-export type ChatRole = "user" | "assistant"
-
-export interface ChatMessageProps {
-  role: ChatRole
-  content: string
-}
-
-export function ChatMessage({ role, content }: ChatMessageProps) {
+export function ChatMessage({ role, text }: ChatMessageProps) {
   const isUser = role === "user"
   const RoleIcon = isUser ? User : Stethoscope
 
@@ -37,7 +31,7 @@ export function ChatMessage({ role, content }: ChatMessageProps) {
       </MessageAvatar>
       <MessageContent>
         <Bubble variant={isUser ? "default" : "muted"}>
-          <BubbleContent>{content}</BubbleContent>
+          <BubbleContent>{text}</BubbleContent>
         </Bubble>
       </MessageContent>
     </Message>
