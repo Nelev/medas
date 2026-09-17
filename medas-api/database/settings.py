@@ -42,7 +42,4 @@ class DbSettings(BaseSettings):
 
 @lru_cache
 def get_settings() -> DbSettings:
-    # database_password has no default, so pyright sees a missing argument.
-    # It is supplied at runtime from the environment or .env, which the type
-    # checker cannot see. Raises ValidationError if it is genuinely absent.
-    return DbSettings()  # pyright: ignore[reportCallIssue]
+    return DbSettings()
