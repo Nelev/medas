@@ -74,8 +74,12 @@ def iter_chunks(doc: dict[str, Any]) -> Iterator[Chunk]:
             chunk_id=f"{patient_id}:episode:{ep['episode_id']}",
             kind="episode",
             text=_episode_text(doc, ep),
-            metadata={"patient_id": patient_id, "date": ep["date"],
-                      "type": ep["type"], "setting": ep["setting"]},
+            metadata={
+                "patient_id": patient_id,
+                "date": ep["date"],
+                "type": ep["type"],
+                "setting": ep["setting"],
+            },
         )
 
     for i, al in enumerate(doc.get("allergies", [])):
@@ -83,8 +87,12 @@ def iter_chunks(doc: dict[str, Any]) -> Iterator[Chunk]:
             chunk_id=f"{patient_id}:allergy:{i:02d}",
             kind="allergy",
             text=_allergy_text(doc, al),
-            metadata={"patient_id": patient_id, "substance": al["substance"],
-                      "severity": al["severity"], "status": al["status"]},
+            metadata={
+                "patient_id": patient_id,
+                "substance": al["substance"],
+                "severity": al["severity"],
+                "status": al["status"],
+            },
         )
 
     for i, med in enumerate(doc.get("current_medication", [])):
@@ -92,8 +100,11 @@ def iter_chunks(doc: dict[str, Any]) -> Iterator[Chunk]:
             chunk_id=f"{patient_id}:medication:{i:02d}",
             kind="medication",
             text=_medication_text(doc, med),
-            metadata={"patient_id": patient_id, "name": med["name"],
-                      "started": med["started"]},
+            metadata={
+                "patient_id": patient_id,
+                "name": med["name"],
+                "started": med["started"],
+            },
         )
 
     for path in doc.get("pathologies", []):
@@ -101,6 +112,10 @@ def iter_chunks(doc: dict[str, Any]) -> Iterator[Chunk]:
             chunk_id=f"{patient_id}:pathology:{path['icd10']}",
             kind="pathology",
             text=_pathology_text(doc, path),
-            metadata={"patient_id": patient_id, "icd10": path["icd10"],
-                      "status": path["status"], "diagnosed": path["diagnosed"]},
+            metadata={
+                "patient_id": patient_id,
+                "icd10": path["icd10"],
+                "status": path["status"],
+                "diagnosed": path["diagnosed"],
+            },
         )
