@@ -20,7 +20,19 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ruff>=0.16.7",
+    "pytest>=8.4",
+    "pytest-asyncio>=1.2",
 ]
+
+[tool.pytest.ini_options]
+# auto: async test functions run without a per-test marker.
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# There is no [build-system], so uv does not install this project into the
+# venv and imports resolve against the working directory. Put the package
+# root on sys.path so tests can `from schema import ...` the same way the
+# app does.
+pythonpath = ["."]
 
 [tool.ruff]
 # target-version is inferred from project.requires-python (>=3.14).
@@ -48,6 +60,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Migrations are generated-ish and deliberately imperative.
 "migrations/versions/*.py" = ["D"]
+# S101 flags `assert`, which is the whole point of a test; S105/S106 flag
+# hardcoded passwords, which is what a credential fixture is.
+"tests/*.py" = ["S101", "S105", "S106"]
 
 [tool.pyright]
 # Pylance/pyright cannot auto-discover .venv when the workspace root is the
