@@ -1,7 +1,7 @@
 import { ChatComposer } from "@/components/chat/chat-composer"
 import { ChatHeader } from "@/components/chat/chat-header"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { ChatMessage } from "@/components/chat/chat-message"
+import { ChatMessages } from "@/components/chat/chat-messages"
 import { init } from "@/api/init"
 
 // Hardcoded until there is a session to read it from. One constant so there
@@ -23,11 +23,10 @@ export default async function Home() {
       {/* min-h-0 is load-bearing: without it this flex child refuses to shrink
           below its content height and the list never scrolls. */}
       <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col gap-4 px-4 py-6 sm:gap-6 sm:px-6">
-          {messages.map((message, index) => (
-            <ChatMessage key={index} role={message.role} text={message.text} />
-          ))}
-        </div>
+        {/* The list reads from the store, so a sent message shows up without
+            a round trip through the server. This component only provides the
+            greeting it starts with. */}
+        <ChatMessages initialMessages={messages} />
       </ScrollArea>
       <footer className="bg-background shrink-0 border-t px-4 py-3 sm:px-6">
         <ChatComposer />

@@ -19,13 +19,13 @@ from main import app
 
 SERVER_VERSION = "18.0 (Debian 18.0-1)"
 
-# The opaque patient id the UI greets by, alongside the FK that owns the row.
-NEW_CONVERSATION = {
-    "user_id": "7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0",
-    "user": "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0",
-    "role": "user",
-    "text": "What is my last episode?",
-}
+# The owning user is a query parameter; the body is just the message.
+USER_ID = "7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
+NEW_MESSAGE = {"role": "user", "text": "What is my last episode?"}
+
+# Who the seeded greeting is addressed to. start_conversation passes a literal
+# name rather than resolving one for USER_ID, so this is not the caller.
+SEEDED_NAME = "Mattia"
 
 
 class FakeSession:
@@ -256,7 +256,9 @@ async def test_start_conversation_seeds_the_greeting_then_the_first_message(
 ):
     fake_session.result = uuid.uuid4()
 
-    response = await client.post("/conversations", json=NEW_CONVERSATION)
+    response = await client.post(
+        "/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE
+    )
 
     assert response.status_code == 201
     body = response.json()
@@ -264,27 +266,33 @@ async def test_start_conversation_seeds_the_greeting_then_the_first_message(
     assert body["conversation_id"] == str(fake_session.result)
     greeting, first = body["messages"]
     assert greeting["role"] == "assistant"
-    assert greeting["text"] == f"Hi {NEW_CONVERSATION['user']}, how can I help you?"
-    assert (first["role"], first["text"]) == ("user", NEW_CONVERSATION["text"])
+    assert greeting["text"] == f"Hi {SEEDED_NAME}, how can I help you?"
+    assert (first["role"], first["text"]) == ("user", NEW_MESSAGE["text"])
     # Both seeded messages are real messages, not bare role/text pairs.
     assert uuid.UUID(greeting["message_id"]) != uuid.UUID(first["message_id"])
     assert greeting["timestamp"] <= first["timestamp"]
     assert fake_session.committed
 
 
-async def test_seeded_greeting_matches_the_one_served_before_the_conversation(
-    client, fake_session
-):
-    # The UI renders / before anything is stored, then renders what
-    # POST /conversations wrote. If these two drift the greeting visibly
-    # changes under the user the moment they send their first message.
+async def test_seeded_greeting_ignores_the_caller(client, fake_session):
+    # / greets whoever asks; start_conversation greets a hardcoded name. So
+    # the greeting the UI previews and the one stored under it differ, and
+    # the user sees it change the moment they send. Pinned as it behaves --
+    # this becomes an equality check once the name is resolved from userId.
     fake_session.result = uuid.uuid4()
+    user = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 
-    previewed = await client.get("/", params={"user": NEW_CONVERSATION["user"]})
-    created = await client.post("/conversations", json=NEW_CONVERSATION)
+    previewed = await client.get("/", params={"user": user})
+    created = await client.post(
+        "/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE
+    )
 
     assert (
-        created.json()["messages"][0]["text"] == previewed.json()["messages"][0]["text"]
+        created.json()["messages"][0]["text"]
+        == f"Hi {SEEDED_NAME}, how can I help you?"
+    )
+    assert (
+        created.json()["messages"][0]["text"] != previewed.json()["messages"][0]["text"]
     )
 
 
@@ -292,7 +300,9 @@ async def test_start_conversation_for_an_unknown_user_is_404(client, fake_sessio
     # The user_id FK is what rejects this; unmapped it would surface as a 500.
     fake_session.error = IntegrityError("INSERT", {}, Exception("fk violation"))
 
-    response = await client.post("/conversations", json=NEW_CONVERSATION)
+    response = await client.post(
+        "/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE
+    )
 
     assert response.status_code == 404
     assert not fake_session.committed
@@ -303,7 +313,7 @@ async def test_start_conversation_is_a_single_insert(client, fake_session):
     # can reference yet needs no read-modify-write and no second trip.
     fake_session.result = uuid.uuid4()
 
-    await client.post("/conversations", json=NEW_CONVERSATION)
+    await client.post("/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE)
 
     assert len(fake_session.statements) == 1
     assert fake_session.statements[0].startswith("INSERT INTO conversations")
@@ -312,16 +322,27 @@ async def test_start_conversation_is_a_single_insert(client, fake_session):
 @pytest.mark.parametrize(
     "payload",
     [
-        pytest.param(NEW_CONVERSATION | {"user_id": None}, id="missing-user-id"),
-        pytest.param(NEW_CONVERSATION | {"user_id": "not-a-uuid"}, id="bad-user-id"),
-        pytest.param(NEW_CONVERSATION | {"user": " "}, id="blank-user"),
-        pytest.param(NEW_CONVERSATION | {"role": "system"}, id="unknown-role"),
-        pytest.param(NEW_CONVERSATION | {"text": " "}, id="blank-text"),
+        pytest.param(NEW_MESSAGE | {"role": "system"}, id="unknown-role"),
+        pytest.param(NEW_MESSAGE | {"text": " "}, id="blank-text"),
+        pytest.param({"text": "hi"}, id="missing-role"),
     ],
 )
 async def test_start_conversation_rejects_invalid_payloads(
     client, fake_session, payload
 ):
-    response = await client.post("/conversations", json=payload)
+    response = await client.post(
+        "/conversations", params={"userId": USER_ID}, json=payload
+    )
 
     assert response.status_code == 422
+
+
+async def test_start_conversation_requires_the_user_id_query_parameter(
+    client, fake_session
+):
+    # userId is a bare str on the handler, so FastAPI makes it a required
+    # query param. Omitting it is a 422 rather than an insert with no owner.
+    response = await client.post("/conversations", json=NEW_MESSAGE)
+
+    assert response.status_code == 422
+    assert fake_session.statements == []
