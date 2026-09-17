@@ -1,8 +1,9 @@
 import os
 
-from const import OPENAI_BASE_URL
 from dotenv import load_dotenv
 from openai import OpenAI
+
+from rag_pipeline.const import OPENAI_BASE_URL
 
 load_dotenv()
 

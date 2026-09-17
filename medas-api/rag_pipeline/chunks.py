@@ -66,12 +66,19 @@ def iter_chunks(doc: dict[str, Any]) -> Iterator[Chunk]:
     One embedding per record rather than one for the whole document: a single
     vector averaged over 21 unrelated facts matches everything weakly and
     nothing precisely.
+
+    Every chunk_id carries the record's position, so ids are unique by
+    construction rather than by assumption. Deriving them from source fields
+    alone (episode_id, icd10) meant a duplicate in the input produced two
+    chunks with one id, and because ingest upserts, the second silently
+    replaced the first -- losing a chunk with no error anywhere. The
+    domain key is kept after the index so a citation stays readable.
     """
     patient_id = doc["id"]
 
-    for ep in doc.get("episodes", []):
+    for i, ep in enumerate(doc.get("episodes", [])):
         yield Chunk(
-            chunk_id=f"{patient_id}:episode:{ep['episode_id']}",
+            chunk_id=f"{patient_id}:episode:{i:02d}:{ep['episode_id']}",
             kind="episode",
             text=_episode_text(doc, ep),
             metadata={
@@ -107,9 +114,9 @@ def iter_chunks(doc: dict[str, Any]) -> Iterator[Chunk]:
             },
         )
 
-    for path in doc.get("pathologies", []):
+    for i, path in enumerate(doc.get("pathologies", [])):
         yield Chunk(
-            chunk_id=f"{patient_id}:pathology:{path['icd10']}",
+            chunk_id=f"{patient_id}:pathology:{i:02d}:{path['icd10']}",
             kind="pathology",
             text=_pathology_text(doc, path),
             metadata={
