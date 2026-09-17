@@ -147,14 +147,10 @@ def test_missing_field_within_a_record_fails_loudly(doc):
         list(iter_chunks(doc))
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Pathology ids derive from icd10 and episode ids from episode_id, "
-    "so duplicates in the source collide and the later record silently "
-    "overwrites the earlier one on upsert. Pending a decision: raise, or "
-    "disambiguate with an enumerate() index as allergies and medications do.",
-)
 def test_duplicate_icd10_does_not_collide(doc):
+    # Before the positional index, both records produced
+    # "<patient>:pathology:J45.0" and the second silently replaced the first
+    # on upsert.
     doc["pathologies"].append(
         {
             "condition": "Asthma, unspecified",
@@ -164,5 +160,40 @@ def test_duplicate_icd10_does_not_collide(doc):
             "notes": "Duplicate code, different record.",
         }
     )
-    ids = [c["chunk_id"] for c in iter_chunks(doc)]
+
+    chunks = list(iter_chunks(doc))
+    ids = [c["chunk_id"] for c in chunks]
+
     assert len(ids) == len(set(ids))
+    assert sum(c["kind"] == "pathology" for c in chunks) == 2
+
+
+def test_duplicate_episode_id_does_not_collide(doc):
+    duplicate = dict(doc["episodes"][0])
+    doc["episodes"].append(duplicate)
+
+    chunks = list(iter_chunks(doc))
+    ids = [c["chunk_id"] for c in chunks]
+
+    assert len(ids) == len(set(ids))
+    assert sum(c["kind"] == "episode" for c in chunks) == 3
+
+
+def test_wholly_identical_records_still_get_distinct_ids(doc):
+    # Position is the only thing telling these apart, which is precisely why
+    # the id cannot be derived from content alone.
+    doc["pathologies"] = [doc["pathologies"][0], dict(doc["pathologies"][0])]
+
+    ids = [c["chunk_id"] for c in iter_chunks(doc)]
+
+    assert len(ids) == len(set(ids))
+
+
+def test_chunk_ids_record_position_and_domain_key(doc):
+    ids = [c["chunk_id"] for c in iter_chunks(doc)]
+
+    assert ids[0] == f"{PATIENT_ID}:episode:00:ep_01"
+    assert ids[1] == f"{PATIENT_ID}:episode:01:ep_02"
+    assert ids[2] == f"{PATIENT_ID}:allergy:00"
+    assert ids[3] == f"{PATIENT_ID}:medication:00"
+    assert ids[4] == f"{PATIENT_ID}:pathology:00:J45.0"
