@@ -39,9 +39,13 @@ def create_message(message_request: MessageRequest):
         "message": message_request.message,
     }
 
+
 @app.get("/init")
 def init_user_profile(user: str):
-    return {"messages": [{"role": "assistant", "text": f"Hi {user}, how can I help you?"}]}
+    return {
+        "messages": [{"role": "assistant", "text": f"Hi {user}, how can I help you?"}]
+    }
+
 
 @app.get("/health/db")
 async def health_db(session: SessionDep):
