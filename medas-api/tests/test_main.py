@@ -76,18 +76,15 @@ def stub_the_assistant(monkeypatch) -> None:
     async def _patient(session, user_id):
         return "name: Test Patient"
 
-    completion = SimpleNamespace(
-        choices=[
-            SimpleNamespace(message=SimpleNamespace(content=json.dumps(CANNED_ANSWER)))
-        ]
-    )
+    # The Responses API shape: output is a list of items, and output_text is
+    # the text of them joined. An empty output means "no tool call", which is
+    # what ends the loop in main.
+    response = SimpleNamespace(output=[], output_text=json.dumps(CANNED_ANSWER))
 
     monkeypatch.setattr(main, "patient_block", _patient)
     monkeypatch.setattr(main, "search_record", lambda *args, **kwargs: [])
     fake_client = SimpleNamespace(
-        chat=SimpleNamespace(
-            completions=SimpleNamespace(create=lambda **kwargs: completion)
-        )
+        responses=SimpleNamespace(create=lambda **kwargs: response)
     )
 
     monkeypatch.setattr(main, "get_client", lambda: fake_client)

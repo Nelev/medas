@@ -45,7 +45,7 @@ def run():
         # question with Chroma's own 384-dim MiniLM instead of the model
         # the corpus was embedded with.
         query_embeddings=[get_embedding(question)],
-        n_results=1,
+        n_results=10,
         include=["documents", "metadatas", "distances"],
     )
 
