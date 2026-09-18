@@ -1,12 +1,15 @@
 import { ChatHeader } from "@/components/chat/chat-header"
+import { EcgTrace } from "@/components/chat/ecg-trace"
 
 // Next wraps page.tsx in a Suspense boundary with this as the fallback, so
 // the shell paints while the greeting is in flight. It mirrors the page's
 // rails and header exactly to keep the swap free of layout shift.
 export default function Loading() {
   return (
-    <div className="app-backdrop flex h-dvh w-full flex-col items-center bg-fixed sm:p-4 md:p-6">
-      <main className="border-border bg-card/85 flex h-full w-full max-w-3xl flex-col overflow-hidden backdrop-blur-md sm:rounded-[1.75rem] sm:border sm:panel-lit">
+    <div className="app-backdrop relative flex h-dvh w-full flex-col items-center overflow-hidden bg-fixed sm:p-4 md:p-6">
+      <EcgTrace />
+
+      <main className="border-border bg-card/85 relative z-10 flex h-full w-full max-w-3xl flex-col overflow-hidden backdrop-blur-md sm:rounded-[1.75rem] sm:border sm:panel-lit">
         <ChatHeader />
 
         <div className="min-h-0 flex-1 px-4 py-6 sm:px-6 sm:py-8">

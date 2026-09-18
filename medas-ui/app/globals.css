@@ -84,9 +84,13 @@
   --border: oklch(0.9 0.01 88);
   --input: oklch(0.9 0.01 88);
   --ring: oklch(0.6 0.17 32);
-  /* One heartbeat drawn across the canvas. A custom property because a
-     data URI cannot read a colour token, so each mode inks its own. */
-  --trace: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 160' preserveAspectRatio='none'%3E%3Cpath d='M0 80 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43' fill='none' stroke='%2310a05e' stroke-opacity='0.34' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  /* The resting trace, and the light that runs along it. Two colours, not
+     one with opacity: on porcelain a glow has nothing to bloom into, so the
+     light mode gets saturation instead. */
+  --trace-ink: #10a05e;
+  --trace-ink-opacity: 0.34;
+  --trace-lit: #06c167;
+  --trace-glow: 5px;
   /* The lit top edge that gives the panel a thickness a flat border cannot. */
   --lit: rgb(255 255 255 / 0.65);
   --panel-shadow:
@@ -132,7 +136,10 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 14%);
   --ring: oklch(0.72 0.15 36);
-  --trace: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 160' preserveAspectRatio='none'%3E%3Cpath d='M0 80 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43' fill='none' stroke='%2334e39b' stroke-opacity='0.36' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --trace-ink: #34e39b;
+  --trace-ink-opacity: 0.36;
+  --trace-lit: #8dffd0;
+  --trace-glow: 9px;
   --lit: rgb(255 255 255 / 0.06);
   --panel-shadow:
     inset 0 1px 0 var(--lit), 0 1px 2px rgb(0 0 0 / 0.4),
@@ -197,12 +204,10 @@
 
 @layer components {
   /* The canvas the chat panel sits on: two wide, off-centre blooms in the
-     brand hue, and one heartbeat traced low across the width. No repeating
-     pattern -- at this size the eye reads light rather than texture. Fixed,
-     so none of it scrolls with the conversation. */
+     brand hue. The heartbeat itself is EcgTrace, drawn over this. Fixed, so
+     none of it scrolls with the conversation. */
   .app-backdrop {
     background-image:
-      var(--trace),
       radial-gradient(
         55rem 38rem at 12% -8%,
         oklch(from var(--primary) l c h / 0.1),
@@ -213,15 +218,65 @@
         oklch(from var(--pulse) l c h / 0.06),
         transparent 58%
       );
-    background-repeat: no-repeat, no-repeat, no-repeat;
-    background-position:
-      center 86%,
-      0 0,
-      0 0;
-    background-size:
-      100% 11rem,
-      100% 100%,
-      100% 100%;
+    background-repeat: no-repeat, no-repeat;
+  }
+
+  .ecg-rest {
+    fill: none;
+    stroke: var(--trace-ink);
+    stroke-opacity: var(--trace-ink-opacity);
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* The light, and the dot at its head. Dark only: on porcelain the glow has
+     nothing to bloom into and the sweep reads as a flicker rather than a
+     monitor. Both are display:none by default, which also parks the SMIL
+     dot rather than leaving it orbiting an invisible path. */
+  .ecg-chaser,
+  .ecg-head {
+    display: none;
+  }
+
+  .dark .ecg-chaser {
+    display: block;
+    fill: none;
+    stroke: var(--trace-lit);
+    stroke-width: 2.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    /* 6% of the path lit at a time, the rest dark. */
+    stroke-dasharray: 60 940;
+    filter: drop-shadow(0 0 var(--trace-glow) var(--trace-lit));
+    /* Six beats in six seconds: the sweep runs at a resting heart rate. */
+    animation: ecg-sweep 6s linear infinite;
+  }
+
+  .dark .ecg-head {
+    display: block;
+    fill: var(--trace-lit);
+    filter: drop-shadow(0 0 var(--trace-glow) var(--trace-lit));
+  }
+
+  @keyframes ecg-sweep {
+    from {
+      stroke-dashoffset: 1000;
+    }
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  /* The blanket rule in @layer base collapses animation-duration rather than
+     cancelling it, which would leave the dash frozen partway along the trace
+     and the dot stopped wherever it had reached. Hidden outright instead --
+     and SMIL ignores animation-* entirely, so the dot needs this either way. */
+  @media (prefers-reduced-motion: reduce) {
+    .dark .ecg-chaser,
+    .dark .ecg-head {
+      display: none;
+    }
   }
 
   /* The record-is-live dot. The ring is the only motion in the interface, and

@@ -73,7 +73,7 @@ export function ChatComposer() {
           with the input borderless inside it, so the whole row reads as one
           control and the focus ring surrounds all of it. */}
       <form
-        className="border-border bg-card focus-within:border-pulse/40 focus-within:ring-pulse/15 flex items-center gap-2 rounded-full border p-1.5 pl-4 shadow-sm transition-colors focus-within:ring-3"
+        className="border-border bg-card focus-within:border-primary/40 focus-within:ring-primary/15 flex items-center gap-2 rounded-full border p-1.5 pl-4 shadow-sm transition-colors focus-within:ring-3"
         onSubmit={handleSubmit}
       >
         <Input
@@ -87,7 +87,7 @@ export function ChatComposer() {
           type="submit"
           size="icon"
           aria-label="Send message"
-          className="bg-pulse text-pulse-foreground hover:bg-pulse/90 shadow-pulse/30 size-9 shrink-0 rounded-full shadow-md"
+          className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-primary/30 size-9 shrink-0 rounded-full shadow-md"
         >
           <SendHorizontal className="size-4" aria-hidden />
         </Button>

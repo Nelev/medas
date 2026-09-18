@@ -1,6 +1,7 @@
 import { ChatComposer } from "@/components/chat/chat-composer"
 import { ChatHeader } from "@/components/chat/chat-header"
 import { ChatMessages } from "@/components/chat/chat-messages"
+import { EcgTrace } from "@/components/chat/ecg-trace"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { connection } from "next/server"
 
@@ -29,12 +30,14 @@ export default async function Home() {
     // h-dvh rather than h-screen: dynamic viewport units account for mobile
     // browser chrome, so the composer is not pushed under the address bar.
     // The backdrop is fixed so it does not scroll with the conversation.
-    <div className="app-backdrop flex h-dvh w-full flex-col items-center bg-fixed sm:p-4 md:p-6">
+    <div className="app-backdrop relative flex h-dvh w-full flex-col items-center overflow-hidden bg-fixed sm:p-4 md:p-6">
       {/* A panel rather than a full-bleed page: on a wide screen an unbounded
           column of chat has nothing to sit in, and the border gives the eye
           an edge to track. It goes full-bleed below sm, where a floating card
           would only waste vertical space. */}
-      <main className="border-border bg-card/85 flex h-full w-full max-w-3xl flex-col overflow-hidden backdrop-blur-md sm:rounded-[1.75rem] sm:border sm:panel-lit">
+      <EcgTrace />
+
+      <main className="border-border bg-card/85 relative z-10 flex h-full w-full max-w-3xl flex-col overflow-hidden backdrop-blur-md sm:rounded-[1.75rem] sm:border sm:panel-lit">
         <ChatHeader patient={USER} />
 
         {/* min-h-0 is load-bearing: without it this flex child refuses to
