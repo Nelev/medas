@@ -21,9 +21,14 @@ export function ChatMessages({ initialMessages }: ChatMessagesProps) {
     // max-w-2xl inside the shell's max-w-3xl: a measure of ~70 characters
     // stays readable, and the narrower column leaves the bubbles room to sit
     // against their own side rather than meeting in the middle.
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-7 sm:px-6 sm:py-9">
       {list.map((message, index) => (
-        <ChatMessage key={index} role={message.role} text={message.text} />
+        <ChatMessage
+          key={index}
+          role={message.role}
+          text={message.text}
+          severity={message.severity}
+        />
       ))}
     </div>
   )

@@ -3,11 +3,23 @@ import { Stethoscope, User } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Message, MessageAvatar, MessageContent } from "@/components/ui/message"
-import { ChatMessageProps } from "@/model/ChatMessage"
+import { ChatMessageProps, Severity } from "@/model/ChatMessage"
 
-export function ChatMessage({ role, text }: ChatMessageProps) {
+// Straight from the prompt's table, shortened to fit a chip. The code is
+// shown alongside, so the word is a gloss rather than the only signal.
+const SEVERITY_LABEL: Record<Severity, string> = {
+  S1: "emergency",
+  S2: "urgent",
+  S3: "routine",
+  S4: "self-care",
+  S5: "informational",
+}
+
+export function ChatMessage({ role, text, severity }: ChatMessageProps) {
   const isUser = role === "user"
   const RoleIcon = isUser ? User : Stethoscope
+  // The one case the accent colour is spent on: an answer that says go now.
+  const isUrgent = severity === "S1"
 
   return (
     // Rendered with no wrapper element: the list already spaces rows with
@@ -22,8 +34,8 @@ export function ChatMessage({ role, text }: ChatMessageProps) {
           <AvatarFallback
             className={
               isUser
-                ? "bg-secondary text-muted-foreground"
-                : "bg-primary/10 text-primary"
+                ? "bg-muted text-muted-foreground"
+                : "bg-primary/12 text-primary"
             }
           >
             <RoleIcon className="size-4" aria-hidden="true" />
@@ -34,17 +46,39 @@ export function ChatMessage({ role, text }: ChatMessageProps) {
       <MessageContent>
         <Bubble variant={isUser ? "default" : "outline"}>
           {/* Asymmetric corners: the squared-off corner points at the
-              speaker's avatar, so the two sides read apart at a glance. */}
+              speaker's avatar, so the two sides read apart at a glance. The
+              assistant sits on the sage wash with a rule down its left edge --
+              a margin mark, the way an annotated chart is marked. */}
           <BubbleContent
             className={
               isUser
-                ? "rounded-2xl rounded-br-md px-3.5 py-2.5 shadow-sm"
-                : "bg-card! rounded-2xl rounded-bl-md px-3.5 py-2.5 shadow-sm"
+                ? "bg-primary! shadow-primary/25 rounded-2xl rounded-br-md px-4 py-2.5 shadow-md"
+                : isUrgent
+                  ? "bg-pulse/7! border-pulse/25 border-l-pulse rounded-2xl rounded-bl-md border border-l-2 px-4 py-2.5"
+                  : "bg-secondary! border-primary/15 border-l-primary/55 rounded-2xl rounded-bl-md border border-l-2 px-4 py-2.5"
             }
           >
             {text}
           </BubbleContent>
         </Bubble>
+
+        {severity ? (
+          // Stored with the turn and returned in the payload since the API
+          // started triaging; this is where it finally shows.
+          <span
+            className={`mt-1.5 inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[0.625rem] tracking-[0.04em] uppercase ${
+              isUrgent
+                ? "border-pulse/45 text-pulse"
+                : "border-primary/30 text-primary"
+            }`}
+          >
+            <span
+              className={`size-1.5 rounded-full ${isUrgent ? "bg-pulse" : "bg-primary"}`}
+              aria-hidden
+            />
+            {severity} {SEVERITY_LABEL[severity]}
+          </span>
+        ) : null}
       </MessageContent>
     </Message>
   )
