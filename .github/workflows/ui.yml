@@ -1,0 +1,63 @@
+name: ui
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "medas-ui/**"
+      - ".github/workflows/ui.yml"
+  pull_request:
+    paths:
+      - "medas-ui/**"
+      - ".github/workflows/ui.yml"
+
+# A newer push to the same branch makes the in-flight run irrelevant.
+concurrency:
+  group: ui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: lint, types, test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: medas-ui
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Before setup-node, not after: `cache: yarn` below asks yarn where its
+      # cache lives, and without corepack that question reaches the Yarn 1 the
+      # runner ships rather than the Yarn 4 pinned in package.json.
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: yarn
+          cache-dependency-path: medas-ui/yarn.lock
+
+      # --immutable fails if yarn.lock does not match package.json, so a
+      # dependency added without committing the lockfile is caught here
+      # rather than silently resolving to something different from local.
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Lint
+        run: yarn lint
+
+      # tsc separately from next build: it reports every type error, while a
+      # build stops at the first failing module.
+      - name: Typecheck
+        run: yarn tsc --noEmit
+
+      # No API and no browser: the suite is unit-only by design. Anything
+      # needing a running backend belongs in a separate E2E job.
+      - name: Test
+        run: yarn test
+
+      - name: Build
+        run: yarn build
