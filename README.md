@@ -13,11 +13,11 @@ Two packages, deployed and developed separately:
 
 Every request to medas-api is made by the Next server. The browser only ever talks to its own origin:
 
-| Step                | Who calls                              | Call                                                                                |
-| ------------------- | -------------------------------------- | ----------------------------------------------------------------------------------- |
-| Page load           | The Next server, in a Server Component | `GET /?user=�` � the greeting, not persisted                                        |
-| First message       | The Next server, in a Server Action    | `POST /conversations?userId=�` � creates it, retrieves from the record, and answers |
-| Every message after | The Next server, in a Server Action    | `POST /conversations/{id}/messages` � appends                                       |
+| Step                | Who calls                              | Call                                                                                            |
+| ------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Page load           | The Next server, in a Server Component | `GET /?user=…` → the greeting, not persisted                                                    |
+| First message       | The Next server, in a Server Action    | `POST /conversations?userId=…` → creates it, searches the record if the model asks, and answers |
+| Every message after | The Next server, in a Server Action    | `POST /conversations/{id}/messages` → appends                                                   |
 
 That is what keeps the API's origin out of the browser bundle, removes any need for CORS, and lets one build run in any environment. The conversation id is held in a client-side store, which is how the composer knows which of the two calls to make. Nothing is read back: the UI keeps the history it was given, so a reload starts from the greeting again.
 
@@ -97,7 +97,7 @@ yarn install
 
 | Variable             | Read by                                            | Default                 | If it is wrong                           |
 | -------------------- | -------------------------------------------------- | ----------------------- | ---------------------------------------- |
-| `API_BASE_URL`       | The Next **server** � `api/init.ts`, `api/chat.ts` | `http://localhost:8000` | The page fails to render, and sends fail |
+| `API_BASE_URL`       | The Next **server** → `api/init.ts`, `api/chat.ts` | `http://localhost:8000` | The page fails to render, and sends fail |
 | `OPENROUTER_API_KEY` | medas-api — embeddings and the model call          | none                    | Answering fails; the API still starts    |
 
 `API_BASE_URL` has no `NEXT_PUBLIC_` counterpart on purpose. A `NEXT_PUBLIC_` value is inlined into the bundle at build time, so a built artefact would carry whatever URL the build machine had and the browser would call the API cross-origin. Read on the server at request time instead, it can be changed per environment without rebuilding.
@@ -145,8 +145,8 @@ Two things that trip people up: the owning user is a **query parameter** on crea
 Creating a conversation does four things before it responds:
 
 1. **Builds the `<patient>` block** from the database — `users` says who may ask, the record says who they are, joined by the convention that a record id is `pat_` plus the user's uuid. That convention is checked, not assumed: a record that does not belong to the caller is an error rather than someone else's demographics.
-2. **Retrieves** the passages the message matched, filtered to that patient, from the Chroma index.
-3. **Asks the model** with [`agent/assistant_general_prompt.py`](medas-api/agent/assistant_general_prompt.py) as the system message and the three blocks — `<patient>`, `<record>`, `<message>` — as the user turn. The prompt stays byte-identical between requests, which is what lets a provider cache it.
+2. **Asks the model** with [`agent/assistant_general_prompt.py`](medas-api/agent/assistant_general_prompt.py) as the system message, `<patient>` and `<message>` as the user turn, and `search_record` declared as a tool. The prompt stays byte-identical between requests, which is what lets a provider cache it.
+3. **Runs the search, if the model asks for one.** The model cannot reach Chroma; only this process can, so a tool call is a question rather than an answer. The passages go back as a `function_call_output` paired to the call by `call_id`, and the model is asked again with them in hand. It searches in its own wording and only when the question needs the record — "thanks, that is all" costs one call and no search. The `patient_id` used is always `record_id(userId)`, never the one in the model's arguments: those are generated text, and a message claiming a different record id must not become a read of somebody else's chart.
 4. **Parses the reply behind a guard.** A model that answers in prose, omits a field, or invents a severity code is ordinary rather than exceptional, so each becomes a visible fallback instead of a 500 — and that fallback is `S2`, never lower, because a triage answer that could not be read must not imply the symptom was mild.
 
 The prompt triages rather than diagnoses: a ranked differential, an explicit confidence, clarifying questions whenever that confidence is not high, and a severity rated on the **worst plausible cause** rather than the most likely one. Red flags lead the reply and force `S1`.
@@ -176,6 +176,8 @@ Each chunk repeats the patient identity line, because retrieval hands the model 
 
 The embedding calls are billable, so they are behind `run()` rather than at module level: importing the module fires nothing.
 
+The query side is [`agent/search.py`](medas-api/agent/search.py) — one function, `search_record(query, patient_id)`, which is what the model's tool call lands on. It embeds the query with the same model the corpus was embedded with (Chroma's own MiniLM would be a different space, and the distances meaningless), filters on `patient_id` in the metadata, and returns each passage with its `chunk_id` and distance.
+
 ## Testing
 
 The frontend has 23 unit tests, in two files:
@@ -196,15 +198,15 @@ One test pins a trade-off rather than a defect: the field is cleared optimistica
 
 One step in `ui.yml` exists for a non-obvious reason: **`next typegen`** before the typecheck. `LayoutProps` and friends are generated under `.next`, which a fresh checkout does not have, so `tsc` alone fails on `app/layout.tsx` and nothing else.
 
-The build needs no API. `/` renders per request, so nothing is fetched while building � which is also what makes the artefact deployable: no greeting is baked in, and no API origin is compiled into the bundle.
+The build needs no API. `/` renders per request, so nothing is fetched while building — which is also what makes the artefact deployable: no greeting is baked in, and no API origin is compiled into the bundle.
 
 ## Troubleshooting
 
 **The first message returns 404.** No `users` row matches the hardcoded `USER_ID` — see Seed the placeholder user.
 
-**Sending shows a red banner.** The banner quotes the API's own error. `Failed to fetch` means the Next server could not reach medas-api � check `API_BASE_URL` and that the API is running. `404 User not found` means the seed step above was skipped.
+**Sending shows a red banner.** The banner quotes the API's own error. `Failed to fetch` means the Next server could not reach medas-api — check `API_BASE_URL` and that the API is running. `404 User not found` means the seed step above was skipped.
 
-**A submit reloads the page with `?message=�` in the URL.** The form was submitted before React hydrated, so the browser did a plain GET. Harmless, and it resolves once the page finishes loading.
+**A submit reloads the page with `?message=…` in the URL.** The form was submitted before React hydrated, so the browser did a plain GET. Harmless, and it resolves once the page finishes loading.
 
 **An answer arrives with no citations, saying the record does not cover it.** The Chroma index is missing or empty — build it with the RAG pipeline. The API does not fail without it; it answers from general knowledge and says so, which is harder to notice.
 
@@ -220,13 +222,15 @@ Working end to end: the chat UI, creating a conversation and getting a triaged a
 
 Not built yet:
 
-- **Only the first message is answered.** `POST /conversations` retrieves and asks the model; `POST /conversations/{id}/messages` stores the message and returns, with no model call at all. So a conversation gets exactly one answer.
+- **Only the first message is answered.** `POST /conversations` asks the model, tool call and all; `POST /conversations/{id}/messages` stores the message and returns, with no model call at all. So a conversation gets exactly one answer.
 - **The severity never reaches the patient.** It is stored with the assistant turn and returned in the payload, but the UI renders only the text — so an `S1` looks like any other reply.
+- **One search round only.** If the model answers a tool result by asking to search again, there is no third call: `output_text` is empty, the parse falls through, and the patient gets the unavailable fallback at `S2`. Safe, but not an answer. A bounded loop around the two rounds closes it.
+- **A search returns five passages.** `n_results=5`, so a question like "what episodes are in my record?" is answered from the five nearest chunks — the record holds ten episodes, and the model has no way to know it saw half of them.
 - **The model call and the record search block the event loop.** Both are synchronous inside an async handler, so every other request waits out the round trip.
-- **No auth.** The user is a hardcoded constant in the UI and `userId` is a query parameter on a public endpoint � so anyone who can reach medas-api can read or write any patient's conversation by guessing an id. It must come from an authenticated session before this handles a real record.
+- **No auth.** The user is a hardcoded constant in the UI and `userId` is a query parameter on a public endpoint — so anyone who can reach medas-api can read or write any patient's conversation by guessing an id. It must come from an authenticated session before this handles a real record.
 - **The greeting is addressed to a hardcoded `"Mattia"`** in two places — `init.ts` ignores its own `user` argument, and `start_conversation` passes a literal — so the name shown has nothing to do with whose record is loaded.
 - **`userId` is typed `str`, not `UUID`**, so a malformed id is a 500 from the driver rather than a 422.
 - **No history on reload.** Nothing reads conversations back; there is no `GET` for them, so a refresh returns to the greeting with the stored conversation orphaned.
 - **No idempotency.** A double-submitted first message creates two conversations.
-- **A submit before hydration is lost.** The composer uses an `onSubmit` handler rather than a form action, so a submission made before React hydrates navigates to `/?message=�` and the message is dropped. React queues submissions for a `<form action={�}>`; a plain handler cannot.
+- **A submit before hydration is lost.** The composer uses an `onSubmit` handler rather than a form action, so a submission made before React hydrates navigates to `/?message=…` and the message is dropped. React queues submissions for a `<form action={…}>`; a plain handler cannot.
 - **pgvector is not installed.** Embeddings live in Chroma; moving them into Postgres needs a source build on Windows.
