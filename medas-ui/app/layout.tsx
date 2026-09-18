@@ -33,11 +33,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    // Light by default. The dark tokens are complete and switching is one
-    // class on this element, but the porcelain mode is the designed one.
+    // Dark by default: it is where the palette and the ECG sweep are at
+    // their best. The light tokens stay complete under :root, so dropping
+    // this one class is the whole of the switch back.
     <html
       lang="en"
-      className={`${instrumentSans.variable} ${instrumentSerif.variable} ${jetBrainsMono.variable} h-full antialiased`}
+      className={`dark ${instrumentSans.variable} ${instrumentSerif.variable} ${jetBrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
