@@ -7,13 +7,16 @@ of these into an integration test needing a live database. ASGITransport
 drives the app directly and skips lifespan events entirely.
 """
 
+import json
 import uuid
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+import main
 from database.database import get_session
 from main import app
 
@@ -52,6 +55,42 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+
+# What the stubbed model answers with, so a test can assert on it.
+CANNED_ANSWER = {
+    "message": "Worth seeing your GP this week.",
+    "severity": "S3",
+    "confidence": "moderate",
+}
+
+
+@pytest.fixture(autouse=True)
+def stub_the_assistant(monkeypatch) -> None:
+    """Keep the model, the vector store and the record file out of the suite.
+
+    Without this, creating a conversation reaches OpenRouter and Chroma: slow,
+    billable, non-deterministic, and impossible in CI where neither exists.
+    """
+
+    async def _patient(session, user_id):
+        return "name: Test Patient"
+
+    completion = SimpleNamespace(
+        choices=[
+            SimpleNamespace(message=SimpleNamespace(content=json.dumps(CANNED_ANSWER)))
+        ]
+    )
+
+    monkeypatch.setattr(main, "patient_block", _patient)
+    monkeypatch.setattr(main, "search_record", lambda *args, **kwargs: [])
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=lambda **kwargs: completion)
+        )
+    )
+
+    monkeypatch.setattr(main, "get_client", lambda: fake_client)
 
 
 @pytest.fixture
@@ -264,10 +303,13 @@ async def test_start_conversation_seeds_the_greeting_then_the_first_message(
     body = response.json()
     # The id is the whole point: the client needs it for every later message.
     assert body["conversation_id"] == str(fake_session.result)
-    greeting, first = body["messages"]
+    greeting, first, answer = body["messages"]
     assert greeting["role"] == "assistant"
     assert greeting["text"] == f"Hi {SEEDED_NAME}, how can I help you?"
     assert (first["role"], first["text"]) == ("user", NEW_MESSAGE["text"])
+    # And the assistant's reply to it, with the triage code it assigned.
+    assert (answer["role"], answer["text"]) == ("assistant", CANNED_ANSWER["message"])
+    assert answer["severity"] == "S3"
     # Both seeded messages are real messages, not bare role/text pairs.
     assert uuid.UUID(greeting["message_id"]) != uuid.UUID(first["message_id"])
     assert greeting["timestamp"] <= first["timestamp"]
@@ -308,15 +350,19 @@ async def test_start_conversation_for_an_unknown_user_is_404(client, fake_sessio
     assert not fake_session.committed
 
 
-async def test_start_conversation_is_a_single_insert(client, fake_session):
+async def test_start_conversation_inserts_once_then_appends_the_answer(
+    client, fake_session
+):
     # Creating and seeding the first message is one statement: a row nobody
-    # can reference yet needs no read-modify-write and no second trip.
+    # can reference yet needs no read-modify-write and no second trip. The
+    # assistant's reply is a second, separate append.
     fake_session.result = uuid.uuid4()
 
     await client.post("/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE)
 
-    assert len(fake_session.statements) == 1
+    assert len(fake_session.statements) == 2
     assert fake_session.statements[0].startswith("INSERT INTO conversations")
+    assert fake_session.statements[1].startswith("UPDATE conversations")
 
 
 @pytest.mark.parametrize(

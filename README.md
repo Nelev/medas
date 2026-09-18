@@ -13,11 +13,11 @@ Two packages, deployed and developed separately:
 
 Every request to medas-api is made by the Next server. The browser only ever talks to its own origin:
 
-| Step                | Who calls                              | Call                                                                                                 |
-| ------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Page load           | The Next server, in a Server Component | `GET /?user=�` � the greeting, not persisted                                                         |
-| First message       | The Next server, in a Server Action    | `POST /conversations?userId=�` � creates the conversation, seeded with the greeting and this message |
-| Every message after | The Next server, in a Server Action    | `POST /conversations/{id}/messages` � appends                                                        |
+| Step                | Who calls                              | Call                                                                                |
+| ------------------- | -------------------------------------- | ----------------------------------------------------------------------------------- |
+| Page load           | The Next server, in a Server Component | `GET /?user=�` � the greeting, not persisted                                        |
+| First message       | The Next server, in a Server Action    | `POST /conversations?userId=�` � creates it, retrieves from the record, and answers |
+| Every message after | The Next server, in a Server Action    | `POST /conversations/{id}/messages` � appends                                       |
 
 That is what keeps the API's origin out of the browser bundle, removes any need for CORS, and lets one build run in any environment. The conversation id is held in a client-side store, which is how the composer knows which of the two calls to make. Nothing is read back: the UI keeps the history it was given, so a reload starts from the greeting again.
 
@@ -26,7 +26,7 @@ That is what keeps the API's origin out of the browser bundle, removes any need 
 - [uv](https://docs.astral.sh/uv/) — installs Python 3.14 itself, so no system Python is needed
 - Node 20+ and Yarn 4 (pinned by `packageManager`; `corepack enable` honours it)
 - Postgres 13 or newer — `gen_random_uuid()` is the only version-sensitive dependency
-- An [OpenRouter](https://openrouter.ai) key, for the embedding calls
+- An [OpenRouter](https://openrouter.ai) key. The API needs it now, not only the pipeline: answering a message means an embedding call and a model call.
 
 ## Setup
 
@@ -79,6 +79,13 @@ asyncio.run(seed())
 
 That `INSERT` works just as well through `psql` — note the Windows installer does not put the client on your `PATH`, which is why the Python route is given first.
 
+### Build the vector index
+
+The API searches this at every message, so it has to exist first — an empty or
+absent Chroma store means no passages and an answer with nothing to cite. See
+[RAG pipeline](#rag-pipeline); it is one command, and it costs one batch of
+embedding calls.
+
 ### UI
 
 ```bash
@@ -88,11 +95,12 @@ yarn install
 
 ## Environment
 
-| Variable       | Read by                                            | Default                 | If it is wrong                           |
-| -------------- | -------------------------------------------------- | ----------------------- | ---------------------------------------- |
-| `API_BASE_URL` | The Next **server** � `api/init.ts`, `api/chat.ts` | `http://localhost:8000` | The page fails to render, and sends fail |
+| Variable             | Read by                                            | Default                 | If it is wrong                           |
+| -------------------- | -------------------------------------------------- | ----------------------- | ---------------------------------------- |
+| `API_BASE_URL`       | The Next **server** � `api/init.ts`, `api/chat.ts` | `http://localhost:8000` | The page fails to render, and sends fail |
+| `OPENROUTER_API_KEY` | medas-api — embeddings and the model call          | none                    | Answering fails; the API still starts    |
 
-One variable, and no `NEXT_PUBLIC_` counterpart on purpose. A `NEXT_PUBLIC_` value is inlined into the bundle at build time, so a built artefact would carry whatever URL the build machine had and the browser would call the API cross-origin. Read on the server at request time instead, it can be changed per environment without rebuilding.
+`API_BASE_URL` has no `NEXT_PUBLIC_` counterpart on purpose. A `NEXT_PUBLIC_` value is inlined into the bundle at build time, so a built artefact would carry whatever URL the build machine had and the browser would call the API cross-origin. Read on the server at request time instead, it can be changed per environment without rebuilding.
 
 ## Running
 
@@ -120,17 +128,30 @@ Both suites are unit-only by design — no database, no API, no browser — so t
 
 ## API surface
 
-| Method | Path                           | Request                | Response                                                           |
-| ------ | ------------------------------ | ---------------------- | ------------------------------------------------------------------ |
-| `GET`  | `/?user=<id>`                  | —                      | `{messages: [{role, text}]}` — the greeting, not persisted         |
-| `POST` | `/conversations?userId=<uuid>` | `{role, text}`         | `201 {conversation_id, messages}` — greeting **and** first message |
-| `POST` | `/conversations/{id}/messages` | `{role, text}`         | `201 {role, text, message_id, timestamp}`                          |
-| `GET`  | `/health/db`                   | —                      | `{status, server_version}`                                         |
-| `POST` | `/messages`                    | `{message, user_name}` | Echo stub from an earlier iteration. Unused.                       |
+| Method | Path                           | Request                | Response                                                                                  |
+| ------ | ------------------------------ | ---------------------- | ----------------------------------------------------------------------------------------- |
+| `GET`  | `/?user=<id>`                  | —                      | `{messages: [{role, text}]}` — the greeting, not persisted                                |
+| `POST` | `/conversations?userId=<uuid>` | `{role, text}`         | `201 {conversation_id, messages}` — greeting, the message, **and** the assistant's answer |
+| `POST` | `/conversations/{id}/messages` | `{role, text}`         | `201 {role, text, message_id, timestamp}`                                                 |
+| `GET`  | `/health/db`                   | —                      | `{status, server_version}`                                                                |
+| `POST` | `/messages`                    | `{message, user_name}` | Echo stub from an earlier iteration. Unused.                                              |
 
 Two things that trip people up: the owning user is a **query parameter** on create, not a body field, and the message goes in the body **flat** — a `{message: {...}}` wrapper is a 422.
 
-`message_id` and `timestamp` are minted server-side and ignored if sent. An unknown or soft-deleted conversation is a `404` on append, never an implicit create — that would resurrect deleted threads and let a caller choose its own primary key.
+`message_id` and `timestamp` are minted server-side and ignored if sent. An assistant turn also carries `severity` (`S1`–`S5`) and `confidence`, stored with the message rather than returned alone: which triage code was given, and when, is what an audit asks about later. An unknown or soft-deleted conversation is a `404` on append, never an implicit create — that would resurrect deleted threads and let a caller choose its own primary key.
+
+### How an answer is produced
+
+Creating a conversation does four things before it responds:
+
+1. **Builds the `<patient>` block** from the database — `users` says who may ask, the record says who they are, joined by the convention that a record id is `pat_` plus the user's uuid. That convention is checked, not assumed: a record that does not belong to the caller is an error rather than someone else's demographics.
+2. **Retrieves** the passages the message matched, filtered to that patient, from the Chroma index.
+3. **Asks the model** with [`agent/assistant_general_prompt.py`](medas-api/agent/assistant_general_prompt.py) as the system message and the three blocks — `<patient>`, `<record>`, `<message>` — as the user turn. The prompt stays byte-identical between requests, which is what lets a provider cache it.
+4. **Parses the reply behind a guard.** A model that answers in prose, omits a field, or invents a severity code is ordinary rather than exceptional, so each becomes a visible fallback instead of a 500 — and that fallback is `S2`, never lower, because a triage answer that could not be read must not imply the symptom was mild.
+
+The prompt triages rather than diagnoses: a ranked differential, an explicit confidence, clarifying questions whenever that confidence is not high, and a severity rated on the **worst plausible cause** rather than the most likely one. Red flags lead the reply and force `S1`.
+
+The model is `openai/gpt-4o-mini`, hardcoded in [`main.py`](medas-api/main.py).
 
 ### Data model
 
@@ -185,17 +206,23 @@ The build needs no API. `/` renders per request, so nothing is fetched while bui
 
 **A submit reloads the page with `?message=�` in the URL.** The form was submitted before React hydrated, so the browser did a plain GET. Harmless, and it resolves once the page finishes loading.
 
+**An answer arrives with no citations, saying the record does not cover it.** The Chroma index is missing or empty — build it with the RAG pipeline. The API does not fail without it; it answers from general knowledge and says so, which is harder to notice.
+
+**Creating a conversation 500s.** Usually `OPENROUTER_API_KEY`: the key is read when the first model call is made, not at startup, so the API boots happily and fails on the first message.
+
 **`Cannot find name 'LayoutProps'`.** Route types have not been generated. Run `yarn next typegen`, or any `yarn dev` / `yarn build`.
 
 **The dev server reports a module that no longer exists.** Turbopack caches a deleted file's import. Restart `yarn dev`.
 
 ## Status
 
-Working end to end: the chat UI, creating and appending messages, Postgres persistence, and the chunking and embedding pipeline with its Chroma index.
+Working end to end: the chat UI, creating a conversation and getting a triaged answer grounded in the patient's record, appending further messages, Postgres persistence, and the chunking and embedding pipeline with its Chroma index.
 
 Not built yet:
 
-- **No LLM wired to the chat.** Storing a message does not produce an answer — the assistant only ever speaks its opening greeting. Retrieval currently runs only in the standalone pipeline script.
+- **Only the first message is answered.** `POST /conversations` retrieves and asks the model; `POST /conversations/{id}/messages` stores the message and returns, with no model call at all. So a conversation gets exactly one answer.
+- **The severity never reaches the patient.** It is stored with the assistant turn and returned in the payload, but the UI renders only the text — so an `S1` looks like any other reply.
+- **The model call and the record search block the event loop.** Both are synchronous inside an async handler, so every other request waits out the round trip.
 - **No auth.** The user is a hardcoded constant in the UI and `userId` is a query parameter on a public endpoint � so anyone who can reach medas-api can read or write any patient's conversation by guessing an id. It must come from an authenticated session before this handles a real record.
 - **The greeting is addressed to a hardcoded `"Mattia"`** in two places — `init.ts` ignores its own `user` argument, and `start_conversation` passes a literal — so the name shown has nothing to do with whose record is loaded.
 - **`userId` is typed `str`, not `UUID`**, so a malformed id is a 500 from the driver rather than a 422.

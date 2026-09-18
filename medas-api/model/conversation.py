@@ -112,10 +112,20 @@ async def create_conversation(
 
 
 async def append_message(
-    session: AsyncSession, conversation_id: uuid.UUID, role: str, message_text: str
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    role: str,
+    message_text: str,
+    extra: dict | None = None,
 ) -> dict | None:
-    """Add one message. Returns it, or None if no live conversation matched."""
+    """Add one message. Returns it, or None if no live conversation matched.
+
+    `extra` carries whatever the writer knows and a later reader may want --
+    for an assistant turn, the severity it assigned. Merged underneath the
+    minted fields, so nothing passed in can overwrite them.
+    """
     message = {
+        **(extra or {}),
         "role": role,
         "text": message_text,
         # Minted here, never taken from the caller: a client-supplied id can
