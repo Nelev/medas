@@ -4,20 +4,20 @@ A personal medical assistant: a chat UI over a patient's own medical history, an
 
 Two packages, deployed and developed separately:
 
-| | | |
-|---|---|---|
+|                          |                      |                                                        |
+| ------------------------ | -------------------- | ------------------------------------------------------ |
 | [`medas-api`](medas-api) | FastAPI, Python 3.14 | Chat endpoints, Postgres persistence, the RAG pipeline |
-| [`medas-ui`](medas-ui) | Next.js 16, React 19 | Chat interface |
+| [`medas-ui`](medas-ui)   | Next.js 16, React 19 | Chat interface                                         |
 
 ## How a message flows
 
 Two different clients talk to the API, which is why there are two base-URL variables:
 
-| Step | Who calls | Call |
-|---|---|---|
-| Page load | The Next server, in a Server Component | `GET /?user=…` — the greeting, not persisted |
-| First message | The browser | `POST /conversations?userId=…` — creates the conversation, seeded with the greeting and this message |
-| Every message after | The browser | `POST /conversations/{id}/messages` — appends |
+| Step                | Who calls                              | Call                                                                                                 |
+| ------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Page load           | The Next server, in a Server Component | `GET /?user=…` — the greeting, not persisted                                                         |
+| First message       | The browser                            | `POST /conversations?userId=…` — creates the conversation, seeded with the greeting and this message |
+| Every message after | The browser                            | `POST /conversations/{id}/messages` — appends                                                        |
 
 The conversation id is held in a client-side store, which is how the composer knows which of the two calls to make. Nothing is read back: the UI keeps the history it was given, so a reload starts from the greeting again.
 
@@ -88,10 +88,10 @@ yarn install
 
 ## Environment
 
-| Variable | Read by | Default | If it is wrong |
-|---|---|---|---|
-| `API_BASE_URL` | The Next **server** — `api/init.ts` | `http://localhost:8000` | The page fails to render: `Failed to init profile` |
-| `NEXT_PUBLIC_API_BASE_URL` | The **browser** — `api/chat.ts` | `http://localhost:8000` | Sending fails silently (see Troubleshooting) |
+| Variable                   | Read by                             | Default                 | If it is wrong                                     |
+| -------------------------- | ----------------------------------- | ----------------------- | -------------------------------------------------- |
+| `API_BASE_URL`             | The Next **server** — `api/init.ts` | `http://localhost:8000` | The page fails to render: `Failed to init profile` |
+| `NEXT_PUBLIC_API_BASE_URL` | The **browser** — `api/chat.ts`     | `http://localhost:8000` | Sending fails silently (see Troubleshooting)       |
 
 The `NEXT_PUBLIC_` prefix is what makes a variable reachable from the browser bundle. `init.ts` runs on the server and deliberately does not use one, so the backend origin stays out of the bundle.
 
@@ -116,20 +116,20 @@ cd medas-api && uv run ruff check . && uv run ruff format --check . && uv run py
 ```
 
 ```bash
-cd medas-ui && yarn lint && yarn tsc --noEmit && yarn test
+cd medas-ui && yarn lint && yarn format:check && yarn tsc --noEmit && yarn test
 ```
 
 Both suites are unit-only by design — no database, no API, no browser — so they run unchanged in CI. `yarn test:watch` reruns on change.
 
 ## API surface
 
-| Method | Path | Request | Response |
-|---|---|---|---|
-| `GET` | `/?user=<id>` | — | `{messages: [{role, text}]}` — the greeting, not persisted |
-| `POST` | `/conversations?userId=<uuid>` | `{role, text}` | `201 {conversation_id, messages}` — greeting **and** first message |
-| `POST` | `/conversations/{id}/messages` | `{role, text}` | `201 {role, text, message_id, timestamp}` |
-| `GET` | `/health/db` | — | `{status, server_version}` |
-| `POST` | `/messages` | `{message, user_name}` | Echo stub from an earlier iteration. Unused. |
+| Method | Path                           | Request                | Response                                                           |
+| ------ | ------------------------------ | ---------------------- | ------------------------------------------------------------------ |
+| `GET`  | `/?user=<id>`                  | —                      | `{messages: [{role, text}]}` — the greeting, not persisted         |
+| `POST` | `/conversations?userId=<uuid>` | `{role, text}`         | `201 {conversation_id, messages}` — greeting **and** first message |
+| `POST` | `/conversations/{id}/messages` | `{role, text}`         | `201 {role, text, message_id, timestamp}`                          |
+| `GET`  | `/health/db`                   | —                      | `{status, server_version}`                                         |
+| `POST` | `/messages`                    | `{message, user_name}` | Echo stub from an earlier iteration. Unused.                       |
 
 Two things that trip people up: the owning user is a **query parameter** on create, not a body field, and the message goes in the body **flat** — a `{message: {...}}` wrapper is a 422.
 
@@ -171,10 +171,10 @@ Two tests pin a defect rather than hiding it: `handleSubmit` has no `catch`, so 
 
 ## CI
 
-| Workflow | Runs on | Steps |
-|---|---|---|
-| [`api.yml`](.github/workflows/api.yml) | `medas-api/**` | lint, format check, pytest |
-| [`ui.yml`](.github/workflows/ui.yml) | `medas-ui/**` | lint, typegen, typecheck, test, build |
+| Workflow                               | Runs on        | Steps                                 |
+| -------------------------------------- | -------------- | ------------------------------------- |
+| [`api.yml`](.github/workflows/api.yml) | `medas-api/**` | lint, format check, pytest            |
+| [`ui.yml`](.github/workflows/ui.yml)   | `medas-ui/**`  | lint, typegen, typecheck, test, build |
 
 Two steps in `ui.yml` exist for non-obvious reasons:
 

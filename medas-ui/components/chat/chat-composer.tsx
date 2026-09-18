@@ -1,6 +1,6 @@
 "use client"
-import { SendHorizontal } from "lucide-react"
-import { FormEvent, SyntheticEvent } from "react"
+import { SendHorizontal, TriangleAlert } from "lucide-react"
+import { SyntheticEvent } from "react"
 
 import { postMessage, startNewConversation } from "@/api/chat"
 import { Button } from "@/components/ui/button"
@@ -10,8 +10,10 @@ import { useChatStore } from "@/store/store"
 export function ChatComposer() {
   const conversationId = useChatStore((s) => s.conversationId)
   const messages = useChatStore((s) => s.messages)
+  const error = useChatStore((s) => s.error)
   const setConversationId = useChatStore((s) => s.setConversationId)
   const setMessages = useChatStore((s) => s.setMessages)
+  const setError = useChatStore((s) => s.setError)
 
   const handleSubmit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -24,23 +26,48 @@ export function ChatComposer() {
     if (!text) return
 
     form.reset()
+    // Clear any previous failure: it belonged to the message before this one.
+    setError("")
 
-    // No id yet -> this message creates the conversation.
-    if (!conversationId) {
-      const created = await startNewConversation({ role: "user", text })
-      setConversationId(created.conversationId)
-      // Replace, don't append: the API seeds the greeting alongside the
-      // first message, so its copy is the whole history.
-      setMessages(created.messages)
-      return
+    try {
+      // No id yet -> this message creates the conversation.
+      if (!conversationId) {
+        const created = await startNewConversation({ role: "user", text })
+        setConversationId(created.conversationId)
+        // Replace, don't append: the API seeds the greeting alongside the
+        // first message, so its copy is the whole history.
+        setMessages(created.messages)
+        return
+      }
+
+      const stored = await postMessage({ role: "user", text }, conversationId)
+      setMessages([...messages, stored])
+    } catch (cause) {
+      // The message was never stored, so nothing is added to the list -- the
+      // banner below is the only trace, and without it the send looks like it
+      // silently worked.
+      setError(
+        cause instanceof Error ? cause.message : "Could not send that message.",
+      )
     }
-
-    const stored = await postMessage({ role: "user", text }, conversationId)
-    setMessages([...messages, stored])
   }
 
   return (
     <div className="mx-auto w-full max-w-2xl">
+      {error ? (
+        // role="alert" so the failure is announced, not just drawn.
+        <p
+          role="alert"
+          className="border-destructive/25 bg-destructive/8 text-destructive mb-2 flex items-start gap-2 rounded-xl border px-3 py-2 text-xs"
+        >
+          <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
+          <span>
+            {error}{" "}
+            <span className="opacity-80">Your message was not sent.</span>
+          </span>
+        </p>
+      ) : null}
+
       {/* A real <form> so Enter-to-send works, and so assistive tech
           announces it as a form. The card styling sits on the form itself,
           with the input borderless inside it, so the whole row reads as one
