@@ -18,7 +18,10 @@ export function ChatMessages({ initialMessages }: ChatMessagesProps) {
   const list = messages.length > 0 ? messages : initialMessages
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-6 sm:gap-6 sm:px-6">
+    // max-w-2xl inside the shell's max-w-3xl: a measure of ~70 characters
+    // stays readable, and the narrower column leaves the bubbles room to sit
+    // against their own side rather than meeting in the middle.
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
       {list.map((message, index) => (
         <ChatMessage key={index} role={message.role} text={message.text} />
       ))}
