@@ -49,6 +49,12 @@ jobs:
       - name: Lint
         run: yarn lint
 
+      # LayoutProps and friends are generated, not hand-written, and live
+      # under .next -- which a fresh checkout does not have. Without this the
+      # typecheck below fails on app/layout.tsx alone.
+      - name: Generate route types
+        run: yarn next typegen
+
       # tsc separately from next build: it reports every type error, while a
       # build stops at the first failing module.
       - name: Typecheck
