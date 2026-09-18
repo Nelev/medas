@@ -84,15 +84,13 @@ def stub_the_assistant(monkeypatch) -> None:
 
     monkeypatch.setattr(main, "patient_block", _patient)
     monkeypatch.setattr(main, "search_record", lambda *args, **kwargs: [])
-    monkeypatch.setattr(
-        main,
-        "client",
-        SimpleNamespace(
-            chat=SimpleNamespace(
-                completions=SimpleNamespace(create=lambda **kwargs: completion)
-            )
-        ),
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=lambda **kwargs: completion)
+        )
     )
+
+    monkeypatch.setattr(main, "get_client", lambda: fake_client)
 
 
 @pytest.fixture

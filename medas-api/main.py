@@ -3,6 +3,7 @@ import os
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from functools import lru_cache
 from typing import Annotated
 
 from dotenv import load_dotenv
@@ -23,10 +24,20 @@ load_dotenv()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-client = OpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=OPENROUTER_API_KEY,
-)
+
+@lru_cache
+def get_client() -> OpenAI:
+    """The model client, built on first use rather than at import.
+
+    The SDK raises when the key is missing, so building it at import time
+    meant importing this module required credentials -- which is why CI could
+    not even collect the tests, let alone run them.
+    """
+    return OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=OPENROUTER_API_KEY,
+    )
+
 
 # The codes the prompt defines. Anything else is not a triage decision this
 # service made, whatever the model returned.
@@ -120,7 +131,7 @@ async def start_conversation(message: NewMessage, userId: str, session: SessionD
         },
     ]
 
-    response = client.chat.completions.create(
+    response = get_client().chat.completions.create(
         model="openai/gpt-4o-mini",
         messages=prompt_messages,
         max_tokens=1500,
