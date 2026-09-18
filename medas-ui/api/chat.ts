@@ -1,10 +1,14 @@
+"use server"
+
 import { ChatMessageProps } from "@/model/ChatMessage"
 
-// NEXT_PUBLIC_, unlike api/init.ts: these calls run in the browser (the
-// composer is a Client Component), and an unprefixed variable is undefined
-// there. That is also why the API needs its CORS middleware.
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
+// Server Actions: the composer calls these from the browser, but the fetch
+// below runs on the Next server. That keeps the API's origin out of the
+// bundle -- a NEXT_PUBLIC_ variable is inlined at build time, so a built
+// artefact would carry whatever URL the build machine had, and the browser
+// would be calling the API cross-origin. Read here at request time instead,
+// so one build runs in any environment. It is also why the API needs no CORS.
+const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000"
 
 // Hardcoded until there is a session to read it from. The API takes it as a
 // query parameter and it must match a row in users, or the insert 404s.

@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,15 +29,9 @@ app = FastAPI(lifespan=lifespan)
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
-origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS middleware: the browser never calls this API directly. The UI's
+# requests go through its own server, so every caller here is server-side
+# and same-origin rules do not apply.
 
 
 @app.post("/messages")

@@ -2,6 +2,8 @@ import { ChatComposer } from "@/components/chat/chat-composer"
 import { ChatHeader } from "@/components/chat/chat-header"
 import { ChatMessages } from "@/components/chat/chat-messages"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { connection } from "next/server"
+
 import { init } from "@/api/init"
 
 // Hardcoded until there is a session to read it from. One constant so there
@@ -12,6 +14,15 @@ const USER = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 // so there is no CORS preflight and no empty-list flash on first paint.
 // loading.tsx covers the wait.
 export default async function Home() {
+  // Stops prerendering here, so the greeting is fetched per request rather
+  // than once at build time. Baking it would serve every visitor whatever
+  // the build machine happened to fetch, and would make `next build` require
+  // a reachable medas-api. connection() rather than `export const dynamic`:
+  // Next 16 prefers it, tying the boundary to the incoming request. Once a
+  // session is read here, cookies() makes the page dynamic on its own and
+  // this line can go.
+  await connection()
+
   const { messages } = await init(USER)
 
   return (

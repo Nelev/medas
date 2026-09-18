@@ -70,24 +70,7 @@ jobs:
       - name: Test
         run: yarn test
 
-      # next build prerenders /, which fetches the greeting from medas-api at
-      # build time. There is no API here, so without this the build dies with
-      # ECONNREFUSED. The stub answers that one request and nothing else.
-      #
-      # This makes the build pass; it does not make the artefact deployable.
-      # Anything published from this run would carry the stub's greeting, so
-      # a real deploy needs a real API or a page that renders per request.
-      - name: Start stub API
-        run: |
-          node scripts/stub-api.mjs &
-          for _ in $(seq 1 20); do
-            curl -sf http://localhost:8000/ > /dev/null && exit 0
-            sleep 0.25
-          done
-          echo "stub api did not come up" >&2
-          exit 1
-
+      # No stub API needed: / renders per request, so the build never
+      # fetches the greeting.
       - name: Build
-        env:
-          API_BASE_URL: http://localhost:8000
         run: yarn build
