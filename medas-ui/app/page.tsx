@@ -1,7 +1,7 @@
 import { ChatComposer } from "@/components/chat/chat-composer"
 import { ChatHeader } from "@/components/chat/chat-header"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { ChatMessages } from "@/components/chat/chat-messages"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { init } from "@/api/init"
 
 // Hardcoded until there is a session to read it from. One constant so there
@@ -9,28 +9,36 @@ import { init } from "@/api/init"
 const USER = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 
 // An async Server Component: the request to medas-api happens on the server,
-// so there is no CORS preflight and no empty-list flash on first paint. The
-// uncached fetch marks this route dynamic; loading.tsx covers the wait.
+// so there is no CORS preflight and no empty-list flash on first paint.
+// loading.tsx covers the wait.
 export default async function Home() {
   const { messages } = await init(USER)
 
   return (
     // h-dvh rather than h-screen: dynamic viewport units account for mobile
     // browser chrome, so the composer is not pushed under the address bar.
-    <div className="mx-auto flex h-dvh w-full max-w-3xl flex-col border-x border-border/60">
-      <ChatHeader />
+    // The backdrop is fixed so it does not scroll with the conversation.
+    <div className="app-backdrop flex h-dvh w-full flex-col items-center bg-fixed sm:p-4 md:p-6">
+      {/* A panel rather than a full-bleed page: on a wide screen an unbounded
+          column of chat has nothing to sit in, and the border gives the eye
+          an edge to track. It goes full-bleed below sm, where a floating card
+          would only waste vertical space. */}
+      <main className="border-border/70 bg-background/95 flex h-full w-full max-w-3xl flex-col overflow-hidden backdrop-blur sm:rounded-2xl sm:border sm:shadow-xl">
+        <ChatHeader patient={USER} />
 
-      {/* min-h-0 is load-bearing: without it this flex child refuses to shrink
-          below its content height and the list never scrolls. */}
-      <ScrollArea className="min-h-0 flex-1">
-        {/* The list reads from the store, so a sent message shows up without
-            a round trip through the server. This component only provides the
-            greeting it starts with. */}
-        <ChatMessages initialMessages={messages} />
-      </ScrollArea>
-      <footer className="bg-background shrink-0 border-t px-4 py-3 sm:px-6">
-        <ChatComposer />
-      </footer>
+        {/* min-h-0 is load-bearing: without it this flex child refuses to
+            shrink below its content height and the list never scrolls. */}
+        <ScrollArea className="min-h-0 flex-1">
+          {/* The list reads from the store, so a sent message shows up without
+              a round trip through the server. This component only provides the
+              greeting it starts with. */}
+          <ChatMessages initialMessages={messages} />
+        </ScrollArea>
+
+        <footer className="bg-card/60 shrink-0 border-t px-4 py-3 backdrop-blur-sm sm:px-6 sm:py-4">
+          <ChatComposer />
+        </footer>
+      </main>
     </div>
   )
 }

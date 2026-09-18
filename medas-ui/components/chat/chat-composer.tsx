@@ -40,19 +40,36 @@ export function ChatComposer() {
   }
 
   return (
-    // A real <form> so Enter-to-send works once an onSubmit is attached, and
-    // so assistive tech announces it as a form. Unwired for now.
-    <form className="flex items-center gap-2" onSubmit={handleSubmit}>
-      <Input
-        name="message"
-        placeholder="Send a message..."
-        aria-label="Message"
-        autoComplete="off"
-        className="flex-1"
-      />
-      <Button type="submit" size="icon" aria-label="Send message">
-        <SendHorizontal className="size-4" aria-hidden />
-      </Button>
-    </form>
+    <div className="mx-auto w-full max-w-2xl">
+      {/* A real <form> so Enter-to-send works, and so assistive tech
+          announces it as a form. The card styling sits on the form itself,
+          with the input borderless inside it, so the whole row reads as one
+          control and the focus ring surrounds all of it. */}
+      <form
+        className="border-border/80 bg-card focus-within:border-primary/40 focus-within:ring-ring/15 flex items-center gap-2 rounded-2xl border p-2 shadow-sm transition-colors focus-within:ring-3"
+        onSubmit={handleSubmit}
+      >
+        <Input
+          name="message"
+          placeholder="Ask about your medical history..."
+          aria-label="Message"
+          autoComplete="off"
+          className="h-9 flex-1 border-0 bg-transparent px-2 shadow-none focus-visible:border-0 focus-visible:ring-0"
+        />
+        <Button
+          type="submit"
+          size="icon"
+          aria-label="Send message"
+          className="size-9 shrink-0 rounded-xl"
+        >
+          <SendHorizontal className="size-4" aria-hidden />
+        </Button>
+      </form>
+
+      <p className="text-muted-foreground mt-2 px-1 text-center text-[0.6875rem] leading-relaxed">
+        Medas reads your medical record. It is not a doctor and does not give
+        medical advice &mdash; check anything clinical with your care team.
+      </p>
+    </div>
   )
 }

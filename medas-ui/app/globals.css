@@ -49,30 +49,36 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* Clinical Calm. Neutrals carry a trace of blue (hue 230) rather than
+     being flat grey: on a white-walled screen it reads as calm rather than
+     cold, and it keeps the teal from looking accidental. */
+  --background: oklch(0.985 0.004 230);
+  --foreground: oklch(0.21 0.02 245);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.21 0.02 245);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.508 0.118 165.612);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.508 0.118 165.612);
+  --popover-foreground: oklch(0.21 0.02 245);
+  /* Teal, not the blue every health product defaults to, and not a red that
+     reads as alarm. Dark enough for white text at AA. */
+  --primary: oklch(0.52 0.096 191);
+  --primary-foreground: oklch(0.99 0.01 190);
+  --secondary: oklch(0.955 0.008 225);
+  --secondary-foreground: oklch(0.28 0.025 240);
+  --muted: oklch(0.962 0.006 228);
+  --muted-foreground: oklch(0.52 0.02 240);
+  /* Where the assistant speaks: a mint wash, tinted from the primary hue. */
+  --accent: oklch(0.955 0.025 187);
+  --accent-foreground: oklch(0.3 0.045 190);
+  --destructive: oklch(0.55 0.2 25);
+  --border: oklch(0.91 0.008 235);
+  --input: oklch(0.91 0.008 235);
+  --ring: oklch(0.52 0.096 191);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: 0.75rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.508 0.118 165.612);
@@ -84,24 +90,27 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.696 0.17 162.48);
-  --primary-foreground: oklch(0.262 0.051 172.552);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.696 0.17 162.48);
+  /* Deep slate-teal rather than black: pure black on an OLED phone at 3am
+     makes text edges vibrate, and the tint keeps the palette coherent. */
+  --background: oklch(0.19 0.018 240);
+  --foreground: oklch(0.96 0.005 230);
+  --card: oklch(0.235 0.02 242);
+  --card-foreground: oklch(0.96 0.005 230);
+  --popover: oklch(0.235 0.02 242);
+  --popover-foreground: oklch(0.96 0.005 230);
+  /* Lifted and desaturated for dark: the light-mode teal turns muddy here. */
+  --primary: oklch(0.72 0.11 186);
+  --primary-foreground: oklch(0.2 0.04 195);
+  --secondary: oklch(0.29 0.022 242);
+  --secondary-foreground: oklch(0.96 0.005 230);
+  --muted: oklch(0.285 0.02 242);
+  --muted-foreground: oklch(0.72 0.02 235);
+  --accent: oklch(0.32 0.04 195);
+  --accent-foreground: oklch(0.93 0.03 190);
+  --destructive: oklch(0.68 0.17 24);
+  --border: oklch(1 0 0 / 11%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.72 0.11 186);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -127,4 +136,49 @@
   html {
     @apply font-sans;
   }
+  /* Tabular figures keep timestamps from jittering as the minute ticks. */
+  time {
+    font-variant-numeric: tabular-nums;
+  }
+  ::selection {
+    @apply bg-primary/20;
+  }
+  /* A hairline scrollbar: the default one is wide enough to unbalance a
+     centred column of text. */
+  @supports (scrollbar-width: thin) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+  }
+  /* Respect the OS setting rather than animating regardless. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* The backdrop behind the chat panel: two very wide, very faint radial
+     washes in the brand hue. Fixed, so it does not scroll with content. */
+  .app-backdrop {
+    background-image:
+      radial-gradient(
+        60rem 40rem at 15% -10%,
+        oklch(from var(--primary) l c h / 0.08),
+        transparent 60%
+      ),
+      radial-gradient(
+        50rem 35rem at 110% 10%,
+        oklch(from var(--primary) l c h / 0.06),
+        transparent 55%
+      );
+  }
+
 }
