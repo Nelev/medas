@@ -24,31 +24,14 @@ vi.mock("@/api/chat", () => ({
 const mockedStart = vi.mocked(startNewConversation)
 const mockedPost = vi.mocked(postMessage)
 
-/**
- * Swallows the promise rejections that escape the composer while a test is
- * running, and restores normal reporting afterwards.
- *
- * Only for the failure tests below: handleSubmit has no catch, so a rejected
- * send becomes an unhandled rejection that fails the whole run. Scoped to the
- * tests that provoke it rather than switched off globally, so a rejection
- * anywhere else still fails the suite the way it should.
- */
-const swallowUnhandledRejections = () => {
-  const suppress = (event: PromiseRejectionEvent) => event.preventDefault()
-
-  window.addEventListener("unhandledrejection", suppress)
-  process.on("unhandledRejection", () => {})
-
-  return () => {
-    window.removeEventListener("unhandledrejection", suppress)
-    process.removeAllListeners("unhandledRejection")
-  }
-}
-
 const send = async (text: string) => {
   const user = userEvent.setup()
+  const field = screen.getByRole("textbox", { name: "Message" })
 
-  await user.type(screen.getByRole("textbox", { name: "Message" }), text)
+  // Cleared first so a second send in the same test starts from an empty
+  // field rather than appending to whatever is already there.
+  await user.clear(field)
+  await user.type(field, text)
   await user.click(screen.getByRole("button", { name: "Send message" }))
 }
 
@@ -103,7 +86,10 @@ describe("ChatComposer", () => {
       // greeting alongside the user's own, so its reply is the whole history.
       // Appending would leave the stale entry and show the greeting twice.
       await waitFor(() =>
-        expect(useChatStore.getState().messages).toEqual([greeting, firstMessage]),
+        expect(useChatStore.getState().messages).toEqual([
+          greeting,
+          firstMessage,
+        ]),
       )
     })
   })
@@ -186,43 +172,67 @@ describe("ChatComposer", () => {
       await send("hello")
 
       await waitFor(() =>
-        expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue(""),
+        expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue(
+          "",
+        ),
       )
     })
   })
 
   describe("when the send fails", () => {
     it("leaves the history untouched", async () => {
-      const restore = swallowUnhandledRejections()
-
       mockedStart.mockRejectedValue(new Error("Failed to fetch"))
 
       render(<ChatComposer />)
       await send("hello")
 
       await waitFor(() => expect(mockedStart).toHaveBeenCalled())
+      // Nothing was stored, so nothing may appear in the list.
       expect(useChatStore.getState().messages).toEqual([])
       expect(useChatStore.getState().conversationId).toBe("")
-
-      restore()
     })
 
-    it("does not tell the user anything went wrong", async () => {
-      // Pinning a gap, not endorsing it: the failure is silent. The field is
-      // already cleared, so the message is simply gone with no explanation.
-      // Delete this test when the handler learns to surface an error.
-      const restore = swallowUnhandledRejections()
-
+    it("tells the user, quoting what went wrong", async () => {
       mockedStart.mockRejectedValue(new Error("Failed to fetch"))
 
       render(<ChatComposer />)
       await send("hello")
 
-      await waitFor(() => expect(mockedStart).toHaveBeenCalled())
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument()
-      expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("")
+      const alert = await screen.findByRole("alert")
 
-      restore()
+      expect(alert).toHaveTextContent("Failed to fetch")
+      expect(alert).toHaveTextContent("Your message was not sent")
+    })
+
+    it("does not keep the text that failed to send", async () => {
+      // Pinning the trade-off, not endorsing it: the field is cleared
+      // optimistically on submit and stays cleared on failure, so retrying
+      // means retyping. Flip this test if the draft is ever restored.
+      mockedStart.mockRejectedValue(new Error("Failed to fetch"))
+
+      render(<ChatComposer />)
+      await send("hello")
+
+      await screen.findByRole("alert")
+      expect(screen.getByRole("textbox", { name: "Message" })).toHaveValue("")
+    })
+
+    it("clears the warning once a send succeeds", async () => {
+      mockedStart.mockRejectedValueOnce(new Error("Failed to fetch"))
+
+      render(<ChatComposer />)
+      await send("hello")
+      await screen.findByRole("alert")
+
+      mockedStart.mockResolvedValue({
+        conversationId: CONVERSATION_ID,
+        messages: createdConversation.messages,
+      })
+      await send("again")
+
+      await waitFor(() =>
+        expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
+      )
     })
   })
 })
