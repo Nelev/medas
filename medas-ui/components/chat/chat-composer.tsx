@@ -58,7 +58,7 @@ export function ChatComposer() {
         // role="alert" so the failure is announced, not just drawn.
         <p
           role="alert"
-          className="border-destructive/25 bg-destructive/8 text-destructive mb-2 flex items-start gap-2 rounded-xl border px-3 py-2 text-xs"
+          className="border-destructive/25 bg-destructive/8 text-destructive mb-2.5 flex items-start gap-2 rounded-2xl border px-3.5 py-2.5 text-xs"
         >
           <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
           <span>
@@ -73,7 +73,7 @@ export function ChatComposer() {
           with the input borderless inside it, so the whole row reads as one
           control and the focus ring surrounds all of it. */}
       <form
-        className="border-border/80 bg-card focus-within:border-primary/40 focus-within:ring-ring/15 flex items-center gap-2 rounded-2xl border p-2 shadow-sm transition-colors focus-within:ring-3"
+        className="border-border bg-card focus-within:border-pulse/40 focus-within:ring-pulse/15 flex items-center gap-2 rounded-full border p-1.5 pl-4 shadow-sm transition-colors focus-within:ring-3"
         onSubmit={handleSubmit}
       >
         <Input
@@ -81,19 +81,19 @@ export function ChatComposer() {
           placeholder="Ask about your medical history..."
           aria-label="Message"
           autoComplete="off"
-          className="h-9 flex-1 border-0 bg-transparent px-2 shadow-none focus-visible:border-0 focus-visible:ring-0"
+          className="h-9 flex-1 border-0 bg-transparent px-0 text-[0.9375rem] shadow-none focus-visible:border-0 focus-visible:ring-0"
         />
         <Button
           type="submit"
           size="icon"
           aria-label="Send message"
-          className="size-9 shrink-0 rounded-xl"
+          className="bg-pulse text-pulse-foreground hover:bg-pulse/90 shadow-pulse/30 size-9 shrink-0 rounded-full shadow-md"
         >
           <SendHorizontal className="size-4" aria-hidden />
         </Button>
       </form>
 
-      <p className="text-muted-foreground mt-2 px-1 text-center text-[0.6875rem] leading-relaxed">
+      <p className="text-muted-foreground mt-2.5 px-1 text-center text-[0.65rem] leading-relaxed tracking-[0.01em]">
         Medas reads your medical record. It is not a doctor and does not give
         medical advice &mdash; check anything clinical with your care team.
       </p>

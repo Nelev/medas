@@ -7,9 +7,15 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-sans: var(--font-instrument-sans);
+  --font-mono: var(--font-jetbrains-mono);
+  /* The wordmark face. Separate from --font-sans so a display serif can be
+     asked for by name rather than overriding the body font. */
+  --font-display: var(--font-instrument-serif);
+  /* Not part of shadcn's set: the one colour that means urgency. Kept out of
+     --accent, which components reach for as a hover wash. */
+  --color-pulse: var(--pulse);
+  --color-pulse-foreground: var(--pulse-foreground);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -49,81 +55,101 @@
 }
 
 :root {
-  /* Clinical Calm. Neutrals carry a trace of blue (hue 230) rather than
-     being flat grey: on a white-walled screen it reads as calm rather than
-     cold, and it keeps the teal from looking accidental. */
-  --background: oklch(0.985 0.004 230);
-  --foreground: oklch(0.21 0.02 245);
+  /* Vitals. Warm porcelain rather than blue-grey: warmth is what keeps a
+     medical tool from reading as sterile, and it lets the green sit as a
+     considered choice rather than the default health blue. */
+  --background: oklch(0.982 0.007 85);
+  --foreground: oklch(0.22 0.02 175);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.02 245);
+  --card-foreground: oklch(0.22 0.02 175);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.02 245);
-  /* Teal, not the blue every health product defaults to, and not a red that
-     reads as alarm. Dark enough for white text at AA. */
-  --primary: oklch(0.52 0.096 191);
-  --primary-foreground: oklch(0.99 0.01 190);
-  --secondary: oklch(0.955 0.008 225);
-  --secondary-foreground: oklch(0.28 0.025 240);
-  --muted: oklch(0.962 0.006 228);
-  --muted-foreground: oklch(0.52 0.02 240);
-  /* Where the assistant speaks: a mint wash, tinted from the primary hue. */
-  --accent: oklch(0.955 0.025 187);
-  --accent-foreground: oklch(0.3 0.045 190);
+  --popover-foreground: oklch(0.22 0.02 175);
+  /* Deep consult green. Dark enough to carry white text well past AA. */
+  --primary: oklch(0.42 0.09 178);
+  --primary-foreground: oklch(0.99 0.01 180);
+  /* The wash the assistant speaks on: sage, a desaturated cousin of the
+     primary, so its turns read as grounded rather than decorated. */
+  --secondary: oklch(0.94 0.012 150);
+  --secondary-foreground: oklch(0.28 0.03 175);
+  --muted: oklch(0.955 0.008 88);
+  --muted-foreground: oklch(0.5 0.015 170);
+  --accent: oklch(0.94 0.012 150);
+  --accent-foreground: oklch(0.28 0.03 175);
+  /* Coral, and only ever for urgency: the pulse dot, the send control, and an
+     answer that says go now. Spend it anywhere else and it stops meaning
+     anything. */
+  --pulse: oklch(0.6 0.17 32);
+  --pulse-foreground: oklch(0.99 0.01 40);
   --destructive: oklch(0.55 0.2 25);
-  --border: oklch(0.91 0.008 235);
-  --input: oklch(0.91 0.008 235);
-  --ring: oklch(0.52 0.096 191);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.75rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.508 0.118 165.612);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.508 0.118 165.612);
+  --border: oklch(0.9 0.01 88);
+  --input: oklch(0.9 0.01 88);
+  --ring: oklch(0.6 0.17 32);
+  /* One heartbeat drawn across the canvas. A custom property because a
+     data URI cannot read a colour token, so each mode inks its own. */
+  --trace: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 160' preserveAspectRatio='none'%3E%3Cpath d='M0 80 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43' fill='none' stroke='%2310a05e' stroke-opacity='0.34' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  /* The lit top edge that gives the panel a thickness a flat border cannot. */
+  --lit: rgb(255 255 255 / 0.65);
+  --panel-shadow:
+    inset 0 1px 0 var(--lit), 0 1px 2px oklch(0.22 0.02 175 / 0.05),
+    0 18px 40px -12px oklch(0.22 0.02 175 / 0.18);
+  --chart-1: oklch(0.42 0.09 178);
+  --chart-2: oklch(0.55 0.08 165);
+  --chart-3: oklch(0.65 0.09 120);
+  --chart-4: oklch(0.72 0.12 75);
+  --chart-5: oklch(0.6 0.17 32);
+  --radius: 1.125rem;
+  --sidebar: oklch(0.982 0.007 85);
+  --sidebar-foreground: oklch(0.22 0.02 175);
+  --sidebar-primary: oklch(0.42 0.09 178);
+  --sidebar-primary-foreground: oklch(0.99 0.01 180);
+  --sidebar-accent: oklch(0.94 0.012 150);
+  --sidebar-accent-foreground: oklch(0.28 0.03 175);
+  --sidebar-border: oklch(0.9 0.01 88);
+  --sidebar-ring: oklch(0.6 0.17 32);
 }
 
 .dark {
-  /* Deep slate-teal rather than black: pure black on an OLED phone at 3am
-     makes text edges vibrate, and the tint keeps the palette coherent. */
-  --background: oklch(0.19 0.018 240);
-  --foreground: oklch(0.96 0.005 230);
-  --card: oklch(0.235 0.02 242);
-  --card-foreground: oklch(0.96 0.005 230);
-  --popover: oklch(0.235 0.02 242);
-  --popover-foreground: oklch(0.96 0.005 230);
-  /* Lifted and desaturated for dark: the light-mode teal turns muddy here. */
-  --primary: oklch(0.72 0.11 186);
-  --primary-foreground: oklch(0.2 0.04 195);
-  --secondary: oklch(0.29 0.022 242);
-  --secondary-foreground: oklch(0.96 0.005 230);
-  --muted: oklch(0.285 0.02 242);
-  --muted-foreground: oklch(0.72 0.02 235);
-  --accent: oklch(0.32 0.04 195);
-  --accent-foreground: oklch(0.93 0.03 190);
+  /* Forest ink rather than slate or black: pure black on an OLED screen makes
+     text edges vibrate, and the green cast keeps both modes the same product. */
+  --background: oklch(0.17 0.018 180);
+  --foreground: oklch(0.96 0.006 170);
+  --card: oklch(0.215 0.02 180);
+  --card-foreground: oklch(0.96 0.006 170);
+  --popover: oklch(0.215 0.02 180);
+  --popover-foreground: oklch(0.96 0.006 170);
+  /* Lifted and cooled: the light-mode green turns to mud at this luminance. */
+  --primary: oklch(0.78 0.12 172);
+  --primary-foreground: oklch(0.2 0.04 180);
+  --secondary: oklch(0.25 0.025 170);
+  --secondary-foreground: oklch(0.96 0.006 170);
+  --muted: oklch(0.26 0.018 180);
+  --muted-foreground: oklch(0.72 0.02 172);
+  --accent: oklch(0.25 0.025 170);
+  --accent-foreground: oklch(0.96 0.006 170);
+  --pulse: oklch(0.72 0.15 36);
+  --pulse-foreground: oklch(0.18 0.04 40);
   --destructive: oklch(0.68 0.17 24);
-  --border: oklch(1 0 0 / 11%);
+  --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.72 0.11 186);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.696 0.17 162.48);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.72 0.15 36);
+  --trace: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 160' preserveAspectRatio='none'%3E%3Cpath d='M0 80 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43 h46 q10 -10 20 0 h10 l6 -5 l5 10 l6 -46 l7 82 l7 -41 l6 0 h12 q16 -14 32 0 h43' fill='none' stroke='%2334e39b' stroke-opacity='0.36' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --lit: rgb(255 255 255 / 0.06);
+  --panel-shadow:
+    inset 0 1px 0 var(--lit), 0 1px 2px rgb(0 0 0 / 0.4),
+    0 18px 44px -12px rgb(0 0 0 / 0.55);
+  --chart-1: oklch(0.78 0.12 172);
+  --chart-2: oklch(0.72 0.1 160);
+  --chart-3: oklch(0.75 0.11 120);
+  --chart-4: oklch(0.8 0.12 80);
+  --chart-5: oklch(0.72 0.15 36);
+  --sidebar: oklch(0.17 0.018 180);
+  --sidebar-foreground: oklch(0.96 0.006 170);
+  --sidebar-primary: oklch(0.78 0.12 172);
+  --sidebar-primary-foreground: oklch(0.2 0.04 180);
+  --sidebar-accent: oklch(0.25 0.025 170);
+  --sidebar-accent-foreground: oklch(0.96 0.006 170);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.696 0.17 162.48);
+  --sidebar-ring: oklch(0.72 0.15 36);
 }
 
 @layer base {
@@ -164,20 +190,61 @@
   }
 }
 
+/* A lit top edge, so the panel has thickness rather than just an outline. */
+@utility panel-lit {
+  box-shadow: var(--panel-shadow);
+}
+
 @layer components {
-  /* The backdrop behind the chat panel: two very wide, very faint radial
-     washes in the brand hue. Fixed, so it does not scroll with content. */
+  /* The canvas the chat panel sits on: two wide, off-centre blooms in the
+     brand hue, and one heartbeat traced low across the width. No repeating
+     pattern -- at this size the eye reads light rather than texture. Fixed,
+     so none of it scrolls with the conversation. */
   .app-backdrop {
     background-image:
+      var(--trace),
       radial-gradient(
-        60rem 40rem at 15% -10%,
-        oklch(from var(--primary) l c h / 0.08),
-        transparent 60%
+        55rem 38rem at 12% -8%,
+        oklch(from var(--primary) l c h / 0.1),
+        transparent 62%
       ),
       radial-gradient(
-        50rem 35rem at 110% 10%,
-        oklch(from var(--primary) l c h / 0.06),
-        transparent 55%
+        48rem 34rem at 104% 12%,
+        oklch(from var(--pulse) l c h / 0.06),
+        transparent 58%
       );
+    background-repeat: no-repeat, no-repeat, no-repeat;
+    background-position:
+      center 86%,
+      0 0,
+      0 0;
+    background-size:
+      100% 11rem,
+      100% 100%,
+      100% 100%;
+  }
+
+  /* The record-is-live dot. The ring is the only motion in the interface, and
+     the reduced-motion rule above stops it. */
+  .pulse-dot::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 9999px;
+    border: 1.5px solid var(--pulse);
+    opacity: 0;
+    animation: pulse-ring 2.4s ease-out infinite;
+  }
+
+  @keyframes pulse-ring {
+    0% {
+      transform: scale(0.6);
+      opacity: 0.9;
+    }
+    70%,
+    100% {
+      transform: scale(1.9);
+      opacity: 0;
+    }
   }
 }

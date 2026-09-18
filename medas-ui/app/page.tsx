@@ -34,7 +34,7 @@ export default async function Home() {
           column of chat has nothing to sit in, and the border gives the eye
           an edge to track. It goes full-bleed below sm, where a floating card
           would only waste vertical space. */}
-      <main className="border-border/70 bg-background/95 flex h-full w-full max-w-3xl flex-col overflow-hidden backdrop-blur sm:rounded-2xl sm:border sm:shadow-xl">
+      <main className="border-border bg-card/85 flex h-full w-full max-w-3xl flex-col overflow-hidden backdrop-blur-md sm:rounded-[1.75rem] sm:border sm:panel-lit">
         <ChatHeader patient={USER} />
 
         {/* min-h-0 is load-bearing: without it this flex child refuses to
