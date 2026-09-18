@@ -36,7 +36,10 @@ describe("startNewConversation", () => {
   it("posts to /conversations with the owner as a query parameter", async () => {
     const fetchMock = stubFetch(jsonResponse(createdConversation, 201))
 
-    await startNewConversation({ role: "user", text: "Do I have any allergies?" })
+    await startNewConversation({
+      role: "user",
+      text: "Do I have any allergies?",
+    })
 
     const { url, init } = requestFrom(fetchMock)
 
@@ -48,7 +51,10 @@ describe("startNewConversation", () => {
   it("sends the message flat rather than wrapped", async () => {
     const fetchMock = stubFetch(jsonResponse(createdConversation, 201))
 
-    await startNewConversation({ role: "user", text: "Do I have any allergies?" })
+    await startNewConversation({
+      role: "user",
+      text: "Do I have any allergies?",
+    })
 
     // The API expects NewMessage at the top level. A { message: ... } wrapper
     // is a 422, which is how this was written before.
@@ -96,7 +102,10 @@ describe("postMessage", () => {
   it("posts to the conversation's own messages path", async () => {
     const fetchMock = stubFetch(jsonResponse(storedMessage, 201))
 
-    await postMessage({ role: "user", text: "And my medications?" }, CONVERSATION_ID)
+    await postMessage(
+      { role: "user", text: "And my medications?" },
+      CONVERSATION_ID,
+    )
 
     const { url } = requestFrom(fetchMock)
 
@@ -111,7 +120,10 @@ describe("postMessage", () => {
   it("sends the message flat rather than wrapped", async () => {
     const fetchMock = stubFetch(jsonResponse(storedMessage, 201))
 
-    await postMessage({ role: "user", text: "And my medications?" }, CONVERSATION_ID)
+    await postMessage(
+      { role: "user", text: "And my medications?" },
+      CONVERSATION_ID,
+    )
 
     expect(requestFrom(fetchMock).body).toEqual({
       role: "user",
@@ -122,7 +134,10 @@ describe("postMessage", () => {
   it("returns the stored message with the fields the server minted", async () => {
     stubFetch(jsonResponse(storedMessage, 201))
 
-    const stored = await postMessage({ role: "user", text: "x" }, CONVERSATION_ID)
+    const stored = await postMessage(
+      { role: "user", text: "x" },
+      CONVERSATION_ID,
+    )
 
     expect(stored).toEqual(storedMessage)
     expect(stored.message_id).toBeTruthy()

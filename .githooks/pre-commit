@@ -1,0 +1,37 @@
+#!/bin/sh
+# Formats staged files in place, then re-stages them, so what lands in the
+# commit is what CI checks. Enabled per clone with:
+#
+#     git config core.hooksPath .githooks
+#
+# Each package keeps its own formatter -- prettier for the UI, ruff for the
+# API -- so this only routes files to the right one. Nothing is formatted
+# that was not already staged: an unrelated dirty file stays untouched.
+set -e
+
+staged() {
+  git diff --cached --name-only --diff-filter=ACM
+}
+
+ui_files=$(staged | grep -E '^medas-ui/.*\.(ts|tsx|mjs|css|json)$' || true)
+
+if [ -n "$ui_files" ]; then
+  echo "$ui_files" | sed 's|^medas-ui/||' | (cd medas-ui && xargs yarn prettier --write --log-level warn)
+  echo "$ui_files" | xargs git add
+fi
+
+api_files=$(staged | grep -E '^medas-api/.*\.py$' || true)
+
+if [ -n "$api_files" ]; then
+  echo "$api_files" | sed 's|^medas-api/||' | (cd medas-api && xargs uv run ruff format --quiet)
+  echo "$api_files" | xargs git add
+fi
+
+# Markdown anywhere, including the root README. Run from medas-ui because
+# that is where prettier is installed; it still finds .prettierrc at the root.
+md_files=$(staged | grep -E '\.md$' || true)
+
+if [ -n "$md_files" ]; then
+  echo "$md_files" | sed 's|^|../|' | (cd medas-ui && xargs yarn prettier --write --log-level warn)
+  echo "$md_files" | xargs git add
+fi

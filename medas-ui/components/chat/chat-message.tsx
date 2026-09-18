@@ -2,11 +2,7 @@ import { Stethoscope, User } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
-import {
-  Message,
-  MessageAvatar,
-  MessageContent,
-} from "@/components/ui/message"
+import { Message, MessageAvatar, MessageContent } from "@/components/ui/message"
 import { ChatMessageProps } from "@/model/ChatMessage"
 
 export function ChatMessage({ role, text }: ChatMessageProps) {

@@ -49,6 +49,11 @@ jobs:
       - name: Lint
         run: yarn lint
 
+      # The pre-commit hook formats on the way in; this is what catches a
+      # commit made with the hook not installed.
+      - name: Check formatting
+        run: yarn format:check
+
       # LayoutProps and friends are generated, not hand-written, and live
       # under .next -- which a fresh checkout does not have. Without this the
       # typecheck below fails on app/layout.tsx alone.

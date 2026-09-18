@@ -1,0 +1,13 @@
+# Build output and dependencies.
+node_modules/
+.next/
+.yarn/
+**/*.tsbuildinfo
+
+# Python's side of the repo is ruff's, not prettier's.
+medas-api/
+
+# Generated or vendored data that carries no useful diff.
+**/chroma/
+yarn.lock
+uv.lock
