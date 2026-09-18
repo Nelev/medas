@@ -11,15 +11,15 @@ Two packages, deployed and developed separately:
 
 ## How a message flows
 
-Two different clients talk to the API, which is why there are two base-URL variables:
+Every request to medas-api is made by the Next server. The browser only ever talks to its own origin:
 
 | Step                | Who calls                              | Call                                                                                                 |
 | ------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Page load           | The Next server, in a Server Component | `GET /?user=…` — the greeting, not persisted                                                         |
-| First message       | The browser                            | `POST /conversations?userId=…` — creates the conversation, seeded with the greeting and this message |
-| Every message after | The browser                            | `POST /conversations/{id}/messages` — appends                                                        |
+| Page load           | The Next server, in a Server Component | `GET /?user=�` � the greeting, not persisted                                                         |
+| First message       | The Next server, in a Server Action    | `POST /conversations?userId=�` � creates the conversation, seeded with the greeting and this message |
+| Every message after | The Next server, in a Server Action    | `POST /conversations/{id}/messages` � appends                                                        |
 
-The conversation id is held in a client-side store, which is how the composer knows which of the two calls to make. Nothing is read back: the UI keeps the history it was given, so a reload starts from the greeting again.
+That is what keeps the API's origin out of the browser bundle, removes any need for CORS, and lets one build run in any environment. The conversation id is held in a client-side store, which is how the composer knows which of the two calls to make. Nothing is read back: the UI keeps the history it was given, so a reload starts from the greeting again.
 
 ## Prerequisites
 
@@ -88,14 +88,11 @@ yarn install
 
 ## Environment
 
-| Variable                   | Read by                             | Default                 | If it is wrong                                     |
-| -------------------------- | ----------------------------------- | ----------------------- | -------------------------------------------------- |
-| `API_BASE_URL`             | The Next **server** — `api/init.ts` | `http://localhost:8000` | The page fails to render: `Failed to init profile` |
-| `NEXT_PUBLIC_API_BASE_URL` | The **browser** — `api/chat.ts`     | `http://localhost:8000` | Sending fails silently (see Troubleshooting)       |
+| Variable       | Read by                                            | Default                 | If it is wrong                           |
+| -------------- | -------------------------------------------------- | ----------------------- | ---------------------------------------- |
+| `API_BASE_URL` | The Next **server** � `api/init.ts`, `api/chat.ts` | `http://localhost:8000` | The page fails to render, and sends fail |
 
-The `NEXT_PUBLIC_` prefix is what makes a variable reachable from the browser bundle. `init.ts` runs on the server and deliberately does not use one, so the backend origin stays out of the bundle.
-
-Because the browser calls the API directly, the API keeps a CORS allowlist: `http://localhost:3000` and `http://127.0.0.1:3000`, in [`medas-api/main.py`](medas-api/main.py). **Serve the UI from any other port and every send is blocked** — add the origin there if you move it.
+One variable, and no `NEXT_PUBLIC_` counterpart on purpose. A `NEXT_PUBLIC_` value is inlined into the bundle at build time, so a built artefact would carry whatever URL the build machine had and the browser would call the API cross-origin. Read on the server at request time instead, it can be changed per environment without rebuilding.
 
 ## Running
 
@@ -160,14 +157,14 @@ The embedding calls are billable, so they are behind `run()` rather than at modu
 
 ## Testing
 
-The frontend has 21 unit tests, in two files:
+The frontend has 23 unit tests, in two files:
 
 - [`medas-ui/api/chat.test.ts`](medas-ui/api/chat.test.ts) stubs `globalThis.fetch` rather than mocking the module, so URL building and response mapping actually run — every bug this file has had lived in exactly those two places.
-- [`medas-ui/components/chat/chat-composer.test.tsx`](medas-ui/components/chat/chat-composer.test.tsx) mocks the API client instead, and covers which of the two calls the composer picks.
+- [`medas-ui/components/chat/chat-composer.test.tsx`](medas-ui/components/chat/chat-composer.test.tsx) mocks the API client instead, and covers which of the two calls the composer picks, and what it shows when one fails.
 
 API response shapes live in `medas-ui/test/fixtures.ts`, so a contract change is a one-file edit. `test/setup.ts` resets the store before each test — it is a module singleton, so without that, whichever test ran first would decide the next one's result.
 
-Two tests pin a defect rather than hiding it: `handleSubmit` has no `catch`, so a failed send is silent. They are commented to be deleted once it surfaces an error.
+One test pins a trade-off rather than a defect: the field is cleared optimistically on submit and stays cleared when the send fails, so retrying means retyping. Flip that test if the draft is ever restored.
 
 ## CI
 
@@ -176,18 +173,17 @@ Two tests pin a defect rather than hiding it: `handleSubmit` has no `catch`, so 
 | [`api.yml`](.github/workflows/api.yml) | `medas-api/**` | lint, format check, pytest            |
 | [`ui.yml`](.github/workflows/ui.yml)   | `medas-ui/**`  | lint, typegen, typecheck, test, build |
 
-Two steps in `ui.yml` exist for non-obvious reasons:
+One step in `ui.yml` exists for a non-obvious reason: **`next typegen`** before the typecheck. `LayoutProps` and friends are generated under `.next`, which a fresh checkout does not have, so `tsc` alone fails on `app/layout.tsx` and nothing else.
 
-- **`next typegen`** before the typecheck. `LayoutProps` and friends are generated under `.next`, which a fresh checkout does not have, so `tsc` alone fails on `app/layout.tsx` and nothing else.
-- **A stub API** before the build. `/` is prerendered, so `next build` fetches the greeting at build time and dies with `ECONNREFUSED` on a runner. [`scripts/stub-api.mjs`](medas-ui/scripts/stub-api.mjs) answers that one request.
-
-That second one has a consequence worth stating plainly: **the CI build is not a deployable build.** The prerendered page carries the stub's greeting. A real deploy needs a reachable API at build time, or a page that renders per request.
+The build needs no API. `/` renders per request, so nothing is fetched while building � which is also what makes the artefact deployable: no greeting is baked in, and no API origin is compiled into the bundle.
 
 ## Troubleshooting
 
 **The first message returns 404.** No `users` row matches the hardcoded `USER_ID` — see Seed the placeholder user.
 
-**Sending does nothing and no error appears.** `handleSubmit` has no `catch`, so a rejected request vanishes; check the browser console. The usual cause is the UI running on a port outside the API's CORS allowlist.
+**Sending shows a red banner.** The banner quotes the API's own error. `Failed to fetch` means the Next server could not reach medas-api � check `API_BASE_URL` and that the API is running. `404 User not found` means the seed step above was skipped.
+
+**A submit reloads the page with `?message=�` in the URL.** The form was submitted before React hydrated, so the browser did a plain GET. Harmless, and it resolves once the page finishes loading.
 
 **`Cannot find name 'LayoutProps'`.** Route types have not been generated. Run `yarn next typegen`, or any `yarn dev` / `yarn build`.
 
@@ -200,9 +196,10 @@ Working end to end: the chat UI, creating and appending messages, Postgres persi
 Not built yet:
 
 - **No LLM wired to the chat.** Storing a message does not produce an answer — the assistant only ever speaks its opening greeting. Retrieval currently runs only in the standalone pipeline script.
-- **No auth.** The user is a hardcoded constant in the UI and `userId` is a query parameter on a public endpoint. It must come from an authenticated session before this handles a real record.
+- **No auth.** The user is a hardcoded constant in the UI and `userId` is a query parameter on a public endpoint � so anyone who can reach medas-api can read or write any patient's conversation by guessing an id. It must come from an authenticated session before this handles a real record.
 - **The greeting is addressed to a hardcoded `"Mattia"`** in two places — `init.ts` ignores its own `user` argument, and `start_conversation` passes a literal — so the name shown has nothing to do with whose record is loaded.
 - **`userId` is typed `str`, not `UUID`**, so a malformed id is a 500 from the driver rather than a 422.
-- **No history on reload.** Nothing reads conversations back; there is no `GET` for them.
+- **No history on reload.** Nothing reads conversations back; there is no `GET` for them, so a refresh returns to the greeting with the stored conversation orphaned.
 - **No idempotency.** A double-submitted first message creates two conversations.
+- **A submit before hydration is lost.** The composer uses an `onSubmit` handler rather than a form action, so a submission made before React hydrates navigates to `/?message=�` and the message is dropped. React queues submissions for a `<form action={�}>`; a plain handler cannot.
 - **pgvector is not installed.** Embeddings live in Chroma; moving them into Postgres needs a source build on Windows.
