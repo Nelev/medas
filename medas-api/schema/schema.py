@@ -7,6 +7,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = ["MessageRequest", "NewConversation", "NewMessage"]
 
+# Long enough for anyone describing a symptom, short enough that a caller
+# cannot turn one request into an unbounded prompt. Without a ceiling the
+# body size is the only limit, and it is the model bill that pays for it.
+MAX_TEXT_LENGTH = 4000
+
 
 class MessageRequest(BaseModel):
     # str_strip_whitespace runs before the length check, so min_length=1 sees
@@ -15,8 +20,8 @@ class MessageRequest(BaseModel):
     # alone would not do this -- " " is one character and would pass.
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    message: str = Field(min_length=1)
-    user_name: str = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=MAX_TEXT_LENGTH)
+    user_name: str = Field(min_length=1, max_length=200)
 
 
 class NewMessage(BaseModel):
@@ -28,7 +33,7 @@ class NewMessage(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     role: Literal["user", "assistant"]
-    text: str = Field(min_length=1)
+    text: str = Field(min_length=1, max_length=MAX_TEXT_LENGTH)
 
 
 class NewConversation(NewMessage):

@@ -81,11 +81,17 @@ def stub_the_assistant(monkeypatch) -> None:
     # what ends the loop in main.
     response = SimpleNamespace(output=[], output_text=json.dumps(CANNED_ANSWER))
 
+    async def _search(*args, **kwargs):
+        return []
+
+    # Coroutine functions, because the route awaits both: a plain lambda here
+    # returns a value the route would then try to await.
+    async def _create(**kwargs):
+        return response
+
     monkeypatch.setattr(main, "patient_block", _patient)
-    monkeypatch.setattr(main, "search_record", lambda *args, **kwargs: [])
-    fake_client = SimpleNamespace(
-        responses=SimpleNamespace(create=lambda **kwargs: response)
-    )
+    monkeypatch.setattr(main, "search_record", _search)
+    fake_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
 
     monkeypatch.setattr(main, "get_client", lambda: fake_client)
 
@@ -105,52 +111,6 @@ def fake_session() -> AsyncIterator[FakeSession]:
     app.dependency_overrides[get_session] = _override
     yield session
     app.dependency_overrides.clear()
-
-
-async def test_create_message_echoes_the_payload(client):
-    response = await client.post(
-        "/messages", json={"message": "What is my last episode?", "user_name": "mattia"}
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "user_name": "mattia",
-        "message": "What is my last episode?",
-    }
-
-
-async def test_create_message_strips_surrounding_whitespace(client):
-    response = await client.post(
-        "/messages", json={"message": "  hello  ", "user_name": "  mattia  "}
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {"user_name": "mattia", "message": "hello"}
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        pytest.param({"message": "", "user_name": "m"}, id="empty-message"),
-        pytest.param({"message": " ", "user_name": "m"}, id="blank-message"),
-        pytest.param({"message": "hi", "user_name": " "}, id="blank-user-name"),
-        pytest.param({"message": "hi"}, id="missing-user-name"),
-        pytest.param({"user_name": "m"}, id="missing-message"),
-        pytest.param({}, id="empty-body"),
-    ],
-)
-async def test_create_message_rejects_invalid_payloads(client, payload):
-    # The schema is tested directly in test_schema.py; this pins that the
-    # rejection actually surfaces as a 422 over HTTP rather than a 500.
-    response = await client.post("/messages", json=payload)
-
-    assert response.status_code == 422
-
-
-async def test_create_message_rejects_a_non_string_message(client):
-    response = await client.post("/messages", json={"message": 42, "user_name": "m"})
-
-    assert response.status_code == 422
 
 
 async def test_root_greets_the_user(client):

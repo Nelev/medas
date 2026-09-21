@@ -8,7 +8,7 @@ from typing import Annotated
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
-from openai import OpenAI
+from openai import AsyncOpenAI
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +18,7 @@ from agent.patient import UnknownPatient, patient_block, record_id
 from agent.search import search_record
 from database.database import dispose_engine, get_session, init_engine
 from model import append_message, create_conversation, greeting_text
-from schema import MessageRequest, NewMessage
+from schema import NewMessage
 
 load_dotenv()
 
@@ -26,18 +26,27 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 
 @lru_cache
-def get_client() -> OpenAI:
+def get_client() -> AsyncOpenAI:
     """The model client, built on first use rather than at import.
 
     The SDK raises when the key is missing, so building it at import time
     meant importing this module required credentials -- which is why CI could
     not even collect the tests, let alone run them.
     """
-    return OpenAI(
+    return AsyncOpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=OPENROUTER_API_KEY,
+        # Without this the SDK waits indefinitely: a hung upstream would hold
+        # the request, its database session and its worker until the client
+        # gave up. Generous, because a round that searches the record and
+        # then answers is not fast.
+        timeout=MODEL_TIMEOUT_SECONDS,
     )
 
+
+# A model call that has not answered in this long is not going to. The SDK
+# retries twice by default, so the worst case is roughly three times this.
+MODEL_TIMEOUT_SECONDS = 45.0
 
 # The codes the prompt defines. Anything else is not a triage decision this
 # service made, whatever the model returned.
@@ -71,14 +80,6 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 # No CORS middleware: the browser never calls this API directly. The UI's
 # requests go through its own server, so every caller here is server-side
 # and same-origin rules do not apply.
-
-
-@app.post("/messages")
-def create_message(message_request: MessageRequest):
-    return {
-        "user_name": message_request.user_name,
-        "message": message_request.message,
-    }
 
 
 @app.get("/")
@@ -149,7 +150,11 @@ async def start_conversation(message: NewMessage, userId: str, session: SessionD
         },
     ]
 
-    response = get_client().responses.create(
+    # Awaited, not called: this is the async client, so the request is real
+    # non-blocking I/O rather than a thread standing still. A thread pool would
+    # also cap concurrency -- asyncio's default executor tops out around 32
+    # workers, on calls that take the better part of ten seconds each.
+    response = await get_client().responses.create(
         model="openai/gpt-4o-mini",
         input=input_list,
         max_output_tokens=1500,
@@ -168,11 +173,8 @@ async def start_conversation(message: NewMessage, userId: str, session: SessionD
     for item in response.output:
         if item.type == "function_call" and item.name == "search_record":
             arguments = json.loads(item.arguments)
-            query_result = search_record(
+            query_result = await search_record(
                 arguments.get("text", message.text),
-                # Ours, never the model's: patient_id is generated text, and a
-                # message claiming a different record id must not become a read
-                # of somebody else's.
                 record_id(userId),
             )
 
@@ -191,7 +193,7 @@ async def start_conversation(message: NewMessage, userId: str, session: SessionD
     # unconditionally paid for a second round on every request and re-asked the
     # question with the first answer already in the input.
     if answered_a_call:
-        response = get_client().responses.create(
+        response = await get_client().responses.create(
             model="openai/gpt-4o-mini",
             input=input_list,
             # The same terms as the first round: a reply that is not JSON, or
