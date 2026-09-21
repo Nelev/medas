@@ -1,17 +1,17 @@
 """Retrieval over one patient's record, for the context block.
 
-One search per message, run before the model is called. That is the simple
-shape: the model gets what the question matched and answers from it, rather
-than deciding for itself what to look up.
+Called when the model asks for it rather than before: it decides what is
+worth looking up, and in its own wording.
 """
 
+import asyncio
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import chromadb
 
-from rag_pipeline.embeddings import get_embedding
+from rag_pipeline.embeddings import get_embedding_async
 
 __all__ = ["search_record"]
 
@@ -27,7 +27,7 @@ def _collection():
     )
 
 
-def search_record(
+async def search_record(
     query: str, patient_id: str, n_results: int = 5
 ) -> list[dict[str, Any]]:
     """The passages of this patient's record nearest to `query`.
@@ -39,11 +39,20 @@ def search_record(
     of whether anything relevant was found -- the store gives back the nearest
     passages whether or not any of them are near.
     """
-    result = _collection().query(
+    # A network call, so it is awaited rather than blocking the event loop
+    # behind it.
+    embedding = await get_embedding_async(query)
+
+    # The query itself cannot be: chromadb's PersistentClient is embedded and
+    # synchronous, with no async counterpart -- AsyncHttpClient is for the
+    # client/server mode. It is a local HNSW search, but a thread keeps even
+    # that off the loop.
+    result = await asyncio.to_thread(
+        _collection().query,
         # query_embeddings, not query_texts: the latter would embed the
         # question with Chroma's own MiniLM instead of the model the corpus was
         # embedded with, and the two spaces are not comparable.
-        query_embeddings=[get_embedding(query)],
+        query_embeddings=[embedding],
         where={"patient_id": patient_id},
         n_results=n_results,
         include=["documents", "metadatas", "distances"],
