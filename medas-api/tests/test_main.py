@@ -7,6 +7,7 @@ of these into an integration test needing a live database. ASGITransport
 drives the app directly and skips lifespan events entirely.
 """
 
+import datetime
 import json
 import uuid
 from collections.abc import AsyncIterator
@@ -30,21 +31,80 @@ NEW_MESSAGE = {"role": "user", "text": "What is my last episode?"}
 # name rather than resolving one for USER_ID, so this is not the caller.
 SEEDED_NAME = "Mattia"
 
+# An arbitrary fixed instant for the stored rows. Fixed, so a timestamp
+# assertion fails for a real reason rather than a slow test.
+EPOCH = datetime.datetime(2026, 9, 21, 9, 0, tzinfo=datetime.UTC)
+
+
+class FakeResult(list):
+    """The little of what AsyncSession.execute() returns that the model uses."""
+
+    def first(self) -> SimpleNamespace | None:
+        return self[0] if self else None
+
 
 class FakeSession:
-    """Stands in for AsyncSession: returns a canned scalar, records what ran."""
+    """Stands in for AsyncSession: answers each statement, records what ran.
 
-    def __init__(self, result: object = SERVER_VERSION) -> None:
-        self.result = result
+    Enough of a database to be worth asserting against. It mints ids and
+    timestamps on write and hands the same rows back on read, because that is
+    now where both come from -- the model no longer builds a message in
+    Python and echoes it, it reads back what was stored.
+    """
+
+    def __init__(self) -> None:
+        self.conversation_id = uuid.uuid4()
+        # Whether the conversation an append or a read names is live. False
+        # stands for unknown *and* for soft-deleted: the WHERE clause matches
+        # nothing either way, which is exactly why one 404 covers both.
+        self.matched = True
         self.error: Exception | None = None
         self.statements: list[str] = []
+        self.parameters: list[dict | None] = []
+        self.stored: list[SimpleNamespace] = []
         self.committed = False
 
-    async def scalar(self, statement, params=None) -> object:
+    def _record(self, statement, params) -> None:
         self.statements.append(str(statement))
+        self.parameters.append(params)
         if self.error is not None:
             raise self.error
-        return self.result
+
+    def _store(self, role: str, content: str, meta: dict | None = None):
+        row = SimpleNamespace(
+            message_id=uuid.uuid4(),
+            # A plain string, as the enum column comes back.
+            role=str(role),
+            content=content,
+            meta=meta or {},
+            # Distinct and increasing, like clock_timestamp(). Sharing one
+            # instant would make an ordering assertion pass for free.
+            created_at=EPOCH + datetime.timedelta(seconds=len(self.stored)),
+        )
+        self.stored.append(row)
+        return row
+
+    async def scalar(self, statement, params=None) -> object:
+        self._record(statement, params)
+        if str(statement).startswith("INSERT INTO conversations"):
+            return self.conversation_id
+        return SERVER_VERSION
+
+    async def execute(self, statement, params=None) -> FakeResult:
+        self._record(statement, params)
+        sql = str(statement)
+
+        if sql.startswith("WITH m AS (INSERT INTO messages"):
+            if not self.matched:
+                return FakeResult()
+            return FakeResult(
+                self._store(role, content, json.loads(meta))
+                for role, content, meta in zip(
+                    params["roles"], params["contents"], params["metas"], strict=True
+                )
+            )
+
+        return FakeResult(self.stored if self.matched else [])
 
     async def commit(self) -> None:
         self.committed = True
@@ -162,9 +222,6 @@ async def test_unknown_route_is_a_404(client):
 
 
 async def test_add_message_returns_the_stored_message(client, fake_session):
-    # A returned conversation_id is how append_message reports that a live row
-    # matched, so this is the success path.
-    fake_session.result = uuid.uuid4()
     conversation_id = uuid.uuid4()
 
     response = await client.post(
@@ -176,7 +233,7 @@ async def test_add_message_returns_the_stored_message(client, fake_session):
     body = response.json()
     assert body["role"] == "user"
     assert body["text"] == "What is my last episode?"
-    # Server-minted, so the caller learns them from the response.
+    # Minted by the database, so the caller learns them from the response.
     assert uuid.UUID(body["message_id"])
     assert body["timestamp"]
     assert fake_session.committed
@@ -185,9 +242,9 @@ async def test_add_message_returns_the_stored_message(client, fake_session):
 async def test_add_message_to_a_missing_or_deleted_conversation_is_404(
     client, fake_session
 ):
-    # No conversation_id back means the WHERE matched nothing: unknown id, or
-    # soft-deleted. Either way the append did not happen.
-    fake_session.result = None
+    # Nothing returned means the INSERT ... SELECT selected nothing: unknown
+    # id, or soft-deleted. Either way the row was never written.
+    fake_session.matched = False
 
     response = await client.post(
         f"/conversations/{uuid.uuid4()}/messages",
@@ -218,7 +275,6 @@ async def test_add_message_rejects_invalid_payloads(client, fake_session, payloa
 async def test_add_message_ignores_a_client_supplied_message_id(client, fake_session):
     # The schema has no message_id field, so one in the body is dropped rather
     # than trusted -- pinning that a caller cannot choose its own id.
-    fake_session.result = uuid.uuid4()
     forged = str(uuid.uuid4())
 
     response = await client.post(
@@ -231,27 +287,35 @@ async def test_add_message_ignores_a_client_supplied_message_id(client, fake_ses
 
 
 async def test_add_message_is_a_single_statement(client, fake_session):
-    # The point of the design: one UPDATE, no SELECT-then-write. A second
-    # statement here would mean a read-modify-write crept back in.
-    fake_session.result = uuid.uuid4()
-
+    # The point of the design: one INSERT, and no SELECT before it. The
+    # conversation being live is checked inside the statement that writes, so
+    # there is no window between deciding to write and writing.
     await client.post(
         f"/conversations/{uuid.uuid4()}/messages",
         json={"role": "user", "text": "hi"},
     )
 
     assert len(fake_session.statements) == 1
-    assert fake_session.statements[0].startswith("UPDATE conversations")
-    # onupdate does not fire for raw SQL, so the statement must bump the
-    # column itself or updated_at silently stops tracking the last message.
-    assert "updated_at = now()" in fake_session.statements[0]
+    statement = fake_session.statements[0]
+    assert statement.startswith("WITH m AS (INSERT INTO messages")
+    assert "FROM conversations c" in statement
+    assert "NOT c.deleted" in statement
+
+
+async def test_add_message_stores_no_metadata_of_its_own(client, fake_session):
+    # A user turn carries nothing extra, and the column is NOT NULL: an empty
+    # object, never None, or the insert fails.
+    await client.post(
+        f"/conversations/{uuid.uuid4()}/messages",
+        json={"role": "user", "text": "hi"},
+    )
+
+    assert json.loads(fake_session.parameters[0]["metas"][0]) == {}
 
 
 async def test_start_conversation_seeds_the_greeting_then_the_first_message(
     client, fake_session
 ):
-    fake_session.result = uuid.uuid4()
-
     response = await client.post(
         "/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE
     )
@@ -259,7 +323,7 @@ async def test_start_conversation_seeds_the_greeting_then_the_first_message(
     assert response.status_code == 201
     body = response.json()
     # The id is the whole point: the client needs it for every later message.
-    assert body["conversation_id"] == str(fake_session.result)
+    assert body["conversation_id"] == str(fake_session.conversation_id)
     greeting, first, answer = body["messages"]
     assert greeting["role"] == "assistant"
     assert greeting["text"] == f"Hi {SEEDED_NAME}, how can I help you?"
@@ -269,8 +333,22 @@ async def test_start_conversation_seeds_the_greeting_then_the_first_message(
     assert answer["severity"] == "S3"
     # Both seeded messages are real messages, not bare role/text pairs.
     assert uuid.UUID(greeting["message_id"]) != uuid.UUID(first["message_id"])
-    assert greeting["timestamp"] <= first["timestamp"]
+    # Strictly earlier: the rows are written in one transaction, so a
+    # transaction-start timestamp would make these equal and leave the two
+    # messages with no order between them.
+    assert greeting["timestamp"] < first["timestamp"]
     assert fake_session.committed
+
+
+async def test_the_assistants_severity_is_stored_as_metadata(client, fake_session):
+    # Not flattened into the message: it travels in the metadata column, so a
+    # field added there later cannot collide with a column name.
+    await client.post("/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE)
+
+    assert json.loads(fake_session.parameters[2]["metas"][0]) == {
+        "severity": "S3",
+        "confidence": "moderate",
+    }
 
 
 async def test_seeded_greeting_ignores_the_caller(client, fake_session):
@@ -278,7 +356,6 @@ async def test_seeded_greeting_ignores_the_caller(client, fake_session):
     # the greeting the UI previews and the one stored under it differ, and
     # the user sees it change the moment they send. Pinned as it behaves --
     # this becomes an equality check once the name is resolved from userId.
-    fake_session.result = uuid.uuid4()
     user = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 
     previewed = await client.get("/", params={"user": user})
@@ -307,19 +384,21 @@ async def test_start_conversation_for_an_unknown_user_is_404(client, fake_sessio
     assert not fake_session.committed
 
 
-async def test_start_conversation_inserts_once_then_appends_the_answer(
+async def test_start_conversation_writes_the_conversation_then_its_messages(
     client, fake_session
 ):
-    # Creating and seeding the first message is one statement: a row nobody
-    # can reference yet needs no read-modify-write and no second trip. The
-    # assistant's reply is a second, separate append.
-    fake_session.result = uuid.uuid4()
-
+    # Three statements: the conversation, both seeded messages together, and
+    # the assistant's reply. The seed is one statement rather than one per
+    # message; the reply is separate because the model had not answered yet.
     await client.post("/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE)
 
-    assert len(fake_session.statements) == 2
+    assert len(fake_session.statements) == 3
     assert fake_session.statements[0].startswith("INSERT INTO conversations")
-    assert fake_session.statements[1].startswith("UPDATE conversations")
+    for statement in fake_session.statements[1:]:
+        assert statement.startswith("WITH m AS (INSERT INTO messages")
+        # The greeting precedes the question because seq says so, not because
+        # RETURNING happened to emit the rows that way -- it has no order.
+        assert statement.endswith("ORDER BY m.seq")
 
 
 @pytest.mark.parametrize(
@@ -349,3 +428,38 @@ async def test_start_conversation_requires_the_user_id_query_parameter(
 
     assert response.status_code == 422
     assert fake_session.statements == []
+
+
+async def test_read_conversation_returns_the_whole_history(client, fake_session):
+    # What the jsonb array could only give all at once, and what nothing could
+    # give at all: the conversation, read back after the fact.
+    created = await client.post(
+        "/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE
+    )
+    conversation_id = created.json()["conversation_id"]
+
+    response = await client.get(f"/conversations/{conversation_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["conversation_id"] == conversation_id
+    assert [m["text"] for m in body["messages"]] == [
+        f"Hi {SEEDED_NAME}, how can I help you?",
+        NEW_MESSAGE["text"],
+        CANNED_ANSWER["message"],
+    ]
+    # Metadata comes back merged into the message, the shape it had when it
+    # lived in the array -- so the UI reads a stored turn the same way it
+    # reads a fresh one.
+    assert body["messages"][2]["severity"] == "S3"
+
+
+async def test_read_a_missing_or_deleted_conversation_is_404(client, fake_session):
+    # No rows back. Unknown id, or soft-deleted -- the messages of a deleted
+    # conversation are still rows, and the join to conversations is what
+    # hides them. One answer for both, which is the right one to give a
+    # caller guessing at uuids. A live conversation always holds at least the
+    # greeting it was seeded with, so empty never means an empty conversation.
+    response = await client.get(f"/conversations/{uuid.uuid4()}")
+
+    assert response.status_code == 404
