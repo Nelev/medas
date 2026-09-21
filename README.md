@@ -133,6 +133,7 @@ Both suites are unit-only by design — no database, no API, no browser — so t
 | `GET`  | `/?user=<id>`                  | —                      | `{messages: [{role, text}]}` — the greeting, not persisted                                |
 | `POST` | `/conversations?userId=<uuid>` | `{role, text}`         | `201 {conversation_id, messages}` — greeting, the message, **and** the assistant's answer |
 | `POST` | `/conversations/{id}/messages` | `{role, text}`         | `201 {role, text, message_id, timestamp}`                                                 |
+| `GET`  | `/conversations/{id}`          | —                      | `{conversation_id, messages}` — the whole history, oldest first                           |
 | `GET`  | `/health/db`                   | —                      | `{status, server_version}`                                                                |
 | `POST` | `/messages`                    | `{message, user_name}` | Echo stub from an earlier iteration. Unused.                                              |
 
@@ -157,11 +158,19 @@ The model is `openai/gpt-4o-mini`, hardcoded in [`main.py`](medas-api/main.py).
 
 `users` — id, email, role, timestamps.
 
-`conversations` — id, FK to `users`, `messages` as a `jsonb` array, soft-delete flag, `updated_at`.
+`conversations` — id, FK to `users`, soft-delete flag, `created_at`.
 
-Messages live in a `jsonb` array rather than their own table: the whole history comes back in one read, which is exactly the shape the model is given. The cost is that Postgres rewrites the entire row on each append, so appending message N is roughly O(N). Fine for short conversations; the signal to move to a `messages` table keyed `(conversation_id, seq)` is conversations running long, or needing search, pagination, or per-message state.
+`messages` — id, FK to `conversations`, `seq`, `role`, `content`, `metadata`, `created_at`.
 
-Adding a message is a single `UPDATE ... SET messages = messages || :message`, never a read-modify-write in application code — two overlapping requests on one conversation would otherwise silently lose a message.
+Messages started out as a `jsonb` array on the conversation row. That shape returned the whole history in one read, which is exactly what the model is given, but Postgres has no in-place update: every append rewrote the entire row, so adding message N cost O(N) and every writer on that conversation queued behind the rewrite. One row per message makes an append constant-time and lets the history be read in pieces — ordered, counted, paginated, or filtered by role.
+
+Ordering is `seq`, a **global** identity column, not a timestamp and not a per-conversation counter. `created_at` defaults to `clock_timestamp()` so it is distinct per row, but a counter still beats it: a counter cannot run backwards when the clock is stepped, and it is a stable pagination cursor — "everything after `seq` N" stays correct where "everything after instant T" can skip a row written a microsecond earlier by a slower transaction. A per-conversation `MAX(seq) + 1` would need a lock on the conversation row — putting back the serialisation this table removes — or a retry loop on the unique violation. A global counter leaves gaps between conversations, and the gaps mean nothing.
+
+Every write — one appended message or the pair a new conversation is seeded with — goes through one statement: `INSERT ... SELECT ... FROM conversations WHERE ... AND NOT deleted`, fed from parallel arrays so the SQL text is fixed for any number of messages. The `SELECT` is the existence check, so it happens in the statement that writes rather than in one before it: no window between deciding to write and writing, and no rows selected means no rows inserted, which is how the caller learns the conversation was unknown or deleted. One `WHERE` clause for every write path is also the one place an ownership check belongs once there is a session to read the user from.
+
+`conversations.updated_at` is gone, renamed to `created_at`. It was only ever bumped because an append rewrote that row; appending now writes to `messages` alone, and bumping a column on the conversation would mean taking the lock this change exists to avoid. Last activity is `MAX(messages.created_at)`.
+
+Moving the data is [`c3a5e1d97b24`](medas-api/migrations/versions/c3a5e1d97b24_add_messages_table.py), which backfills every existing array into rows, keeping the `message_id` and `timestamp` already stored, and reverses cleanly: `downgrade` rebuilds the arrays from the rows.
 
 ## RAG pipeline
 
@@ -230,7 +239,7 @@ Not built yet:
 - **No auth.** The user is a hardcoded constant in the UI and `userId` is a query parameter on a public endpoint — so anyone who can reach medas-api can read or write any patient's conversation by guessing an id. It must come from an authenticated session before this handles a real record.
 - **The greeting is addressed to a hardcoded `"Mattia"`** in two places — `init.ts` ignores its own `user` argument, and `start_conversation` passes a literal — so the name shown has nothing to do with whose record is loaded.
 - **`userId` is typed `str`, not `UUID`**, so a malformed id is a 500 from the driver rather than a 422.
-- **No history on reload.** Nothing reads conversations back; there is no `GET` for them, so a refresh returns to the greeting with the stored conversation orphaned.
+- **No history on reload.** `GET /conversations/{id}` exists, but nothing calls it: the UI keeps the history it was given in memory, so a refresh still returns to the greeting with the stored conversation orphaned.
 - **No idempotency.** A double-submitted first message creates two conversations.
 - **A submit before hydration is lost.** The composer uses an `onSubmit` handler rather than a form action, so a submission made before React hydrates navigates to `/?message=…` and the message is dropped. React queues submissions for a `<form action={…}>`; a plain handler cannot.
 - **pgvector is not installed.** Embeddings live in Chroma; moving them into Postgres needs a source build on Windows.

@@ -17,7 +17,13 @@ from agent.assistant_general_prompt import ASSISTANT_SYSTEM_PROMPT
 from agent.patient import UnknownPatient, patient_block, record_id
 from agent.search import search_record
 from database.database import dispose_engine, get_session, init_engine
-from model import append_message, create_conversation, greeting_text
+from model import (
+    MessageRole,
+    append_message,
+    create_conversation,
+    greeting_text,
+    list_messages,
+)
 from schema import NewMessage
 
 load_dotenv()
@@ -231,7 +237,7 @@ async def start_conversation(message: NewMessage, userId: str, session: SessionD
     reply = await append_message(
         session,
         conversation_id,
-        "assistant",
+        MessageRole.ASSISTANT,
         reply_text,
         extra={"severity": severity, "confidence": confidence},
     )
@@ -256,8 +262,20 @@ async def add_message(
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     await session.commit()
-    print(message)
     return message
+
+
+@app.get("/conversations/{conversation_id}")
+async def read_conversation(conversation_id: uuid.UUID, session: SessionDep):
+    messages = await list_messages(session, conversation_id)
+
+    if not messages:
+        # A live conversation always holds at least the greeting it was
+        # seeded with, so nothing back means unknown or soft-deleted -- the
+        # same answer, for the same reason, that appending gives.
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    return {"conversation_id": conversation_id, "messages": messages}
 
 
 @app.get("/health/db")

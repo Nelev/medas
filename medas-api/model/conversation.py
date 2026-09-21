@@ -1,18 +1,17 @@
-"""The conversation model, and the one write that matters: adding a message."""
+"""The conversation model, and starting one."""
 
 import datetime
 import uuid
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Uuid, bindparam, func, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Boolean, DateTime, ForeignKey, Uuid, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.database import Base
+from model.message import MessageRole, add_messages
 
 __all__ = [
     "Conversation",
-    "append_message",
     "create_conversation",
     "greeting_text",
 ]
@@ -27,53 +26,23 @@ class Conversation(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    # JSONB, not JSON: || below is a jsonb operator, and json would keep the
-    # raw text and reparse it on every read.
-    messages: Mapped[list[dict]] = mapped_column(
-        JSONB, server_default=text("'[]'::jsonb")
-    )
     deleted: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
 
-    # TIMESTAMPTZ, like users.updated_at. onupdate covers ORM/Core writes;
-    # append_message is raw SQL, which bypasses it, so that statement sets the
-    # column itself.
-    updated_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    # The row's one timestamp. It was `updated_at`, back when an append
+    # rewrote this row and so genuinely updated it; adding a message now
+    # writes only to `messages`, and bumping a column here would mean taking a
+    # lock on this row -- the contention that moving messages out was meant to
+    # remove. So the column holds what it always actually held for a
+    # conversation, and is now named for it. Last activity is
+    # MAX(messages.created_at).
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
 
 
 _CREATE = text(
-    "INSERT INTO conversations (user_id, messages) VALUES (:user_id, :messages) "
-    "RETURNING conversation_id"
-).bindparams(bindparam("messages", type_=JSONB))
-
-
-# One statement, so concurrent senders queue on the row lock instead of
-# overwriting each other. A read-modify-write in Python would lose messages
-# whenever two requests for the same conversation overlap.
-_APPEND = text(
-    "UPDATE conversations SET messages = messages || :message, updated_at = now() "
-    "WHERE conversation_id = :conversation_id AND NOT deleted "
-    "RETURNING conversation_id"
-    # Typing the parameter is what makes || a jsonb append: it serialises the
-    # list and renders the $1::JSONB cast. An inline ::jsonb in the SQL above
-    # would instead stop SQLAlchemy recognising :message as a parameter at all.
-).bindparams(bindparam("message", type_=JSONB))
-
-
-def _new_message(role: str, message_text: str) -> dict:
-    """Build one message.
-
-    message_id and timestamp are minted here, never taken from the caller: a
-    client-supplied id can collide with one already in the array, and a client
-    clock skews ordering.
-    """
-    return {
-        "role": role,
-        "text": message_text,
-        "message_id": str(uuid.uuid4()),
-        "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
-    }
+    "INSERT INTO conversations (user_id) VALUES (:user_id) RETURNING conversation_id"
+)
 
 
 def greeting_text(user: str) -> str:
@@ -94,50 +63,28 @@ async def create_conversation(
 ) -> tuple[uuid.UUID, list[dict]]:
     """Start a conversation, seeded with the greeting and the first message.
 
-    A plain INSERT, not the careful append below: the row does not exist yet,
-    so nobody else can be writing to it. Raises IntegrityError if user_id is
-    not a real user -- the FK is the check.
+    Two statements, because the messages reference a conversation that does
+    not exist yet. Folding both into one data-modifying CTE would work -- the
+    foreign key is checked after the statement, by which point the parent row
+    is there -- but correctness would then rest on when Postgres fires its
+    referential triggers, which is not something a reader should have to
+    verify. The cost is one round trip per conversation created, next to the
+    model calls the same request makes.
 
-    The greeting is built here rather than accepted from the caller: assistant
-    turns are the server's to write, or a client could put words in its mouth.
+    Raises IntegrityError if user_id is not a real user -- the FK is the
+    check.
+
+    The greeting is built here rather than accepted from the caller:
+    assistant turns are the server's to write, or a client could put words in
+    its mouth.
     """
-    messages = [
-        _new_message("assistant", greeting_text(user)),
-        _new_message(role, message_text),
-    ]
-    conversation_id = await session.scalar(
-        _CREATE, {"user_id": user_id, "messages": messages}
+    conversation_id = await session.scalar(_CREATE, {"user_id": user_id})
+    messages = await add_messages(
+        session,
+        conversation_id,
+        [
+            (MessageRole.ASSISTANT, greeting_text(user), None),
+            (role, message_text, None),
+        ],
     )
     return conversation_id, messages
-
-
-async def append_message(
-    session: AsyncSession,
-    conversation_id: uuid.UUID,
-    role: str,
-    message_text: str,
-    extra: dict | None = None,
-) -> dict | None:
-    """Add one message. Returns it, or None if no live conversation matched.
-
-    `extra` carries whatever the writer knows and a later reader may want --
-    for an assistant turn, the severity it assigned. Merged underneath the
-    minted fields, so nothing passed in can overwrite them.
-    """
-    message = {
-        **(extra or {}),
-        "role": role,
-        "text": message_text,
-        # Minted here, never taken from the caller: a client-supplied id can
-        # collide with one already in the array, and a client clock skews order.
-        "message_id": str(uuid.uuid4()),
-        "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
-    }
-    # A one-element list, because || on two arrays appends elements; passing
-    # the bare object would rely on Postgres' lone-object special case.
-    found = await session.scalar(
-        _APPEND, {"message": [message], "conversation_id": conversation_id}
-    )
-    # Zero rows means absent *or* soft-deleted. Without this the route would
-    # report success on a conversation it never wrote to.
-    return message if found is not None else None

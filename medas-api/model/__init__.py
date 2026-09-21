@@ -7,20 +7,19 @@ table. Importing them here means ``import model`` is enough.
 """
 
 from database.database import Base
-from model.conversation import (
-    Conversation,
-    append_message,
-    create_conversation,
-    greeting_text,
-)
+from model.conversation import Conversation, create_conversation, greeting_text
+from model.message import Message, MessageRole, append_message, list_messages
 from model.user import User, UserRole
 
 __all__ = [
     "Base",
     "Conversation",
+    "Message",
+    "MessageRole",
     "User",
     "UserRole",
     "append_message",
     "create_conversation",
     "greeting_text",
+    "list_messages",
 ]
