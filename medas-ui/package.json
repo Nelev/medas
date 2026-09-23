@@ -13,6 +13,8 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.9.4",
+    "@clerk/ui": "^1.33.1",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.3.0",
     "lucide-react": "^1.46.0",
