@@ -211,7 +211,7 @@ The query side is [`agent/search.py`](medas-api/agent/search.py) — one functio
 
 ## Testing
 
-108 tests in medas-api, 31 in medas-ui.
+109 tests in medas-api, 30 in medas-ui.
 
 The agent is stubbed at one seam. `main.ask_agent` is what every test patches, so the model, the tool, the prompt and the vector store all stay out of the suite — otherwise it would be slow, billable, non-deterministic, and impossible in CI where none of them exist. The fake records the turns it was given, which is how the history tests assert on what the agent was actually told.
 
@@ -242,7 +242,7 @@ The build needs no API. `/` renders per request, so nothing is fetched while bui
 
 **Every request is 403.** `No verified email for this account`: the Clerk account's primary email is not verified. `This email belongs to another account`: a `users` row with that email is already linked to a different Clerk account. **Every request is 401.** The token did not verify: check `CLERK_SECRET_KEY` in `medas-api/.env` is the same key as the UI's, and that the UI's origin is in `CLERK_AUTHORIZED_PARTIES`.
 
-**Sending shows a red banner.** The banner quotes the API's own error. `Failed to fetch` means the Next server could not reach medas-api — check `API_BASE_URL` and that the API is running. `404 User not found` means the seed step above was skipped.
+**Sending shows a red banner.** The banner quotes the API's own error. `Failed to fetch` means the Next server could not reach medas-api — check `API_BASE_URL` and that the API is running.
 
 **A submit reloads the page with `?message=…` in the URL.** The form was submitted before React hydrated, so the browser did a plain GET. Harmless, and it resolves once the page finishes loading.
 

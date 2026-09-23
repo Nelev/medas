@@ -17,14 +17,14 @@ vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }))
 
 const TOKEN = "session.jwt.token"
 
-const signInAs = (userId: string | null, token: string | null = TOKEN) =>
+// Signed out is a null token: that is all api/session.ts reads.
+const signInAs = (token: string | null = TOKEN) =>
   vi.mocked(auth).mockResolvedValue({
-    userId,
     getToken: async () => token,
   } as unknown as Awaited<ReturnType<typeof auth>>)
 
 beforeEach(() => {
-  signInAs("user_test")
+  signInAs()
 })
 
 // globalThis.fetch is stubbed rather than the module mocked: the URL building
@@ -119,16 +119,6 @@ describe("ask", () => {
 
   it("refuses to ask without a session, before calling the API", async () => {
     signInAs(null)
-    const fetchMock = stubFetch(jsonResponse(askedTurns, 201))
-
-    await expect(
-      ask({ role: "user", text: "x" }, CONVERSATION_ID),
-    ).rejects.toThrow("Not signed in")
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
-  it("refuses to ask when Clerk has no token to give", async () => {
-    signInAs("user_test", null)
     const fetchMock = stubFetch(jsonResponse(askedTurns, 201))
 
     await expect(
