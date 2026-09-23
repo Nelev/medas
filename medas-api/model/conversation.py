@@ -86,5 +86,6 @@ async def create_conversation(
             (MessageRole.ASSISTANT, greeting_text(user), None),
             (role, message_text, None),
         ],
+        user_id=user_id,
     )
     return conversation_id, messages
