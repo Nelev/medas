@@ -207,11 +207,11 @@ Each chunk repeats the patient identity line, because retrieval hands the model 
 
 The embedding calls are billable, so they are behind `run()` rather than at module level: importing the module fires nothing.
 
-The query side is [`agent/search.py`](medas-api/agent/search.py) — one function, `search_record(query, patient_id)`, which the agent's tool wraps. It embeds the query with the same model the corpus was embedded with (Chroma's own MiniLM would be a different space, and the distances meaningless), filters on `patient_id` in the metadata, and returns each passage with its `chunk_id` and distance. Both halves stay off the event loop: the embedding is a real `await`, and the Chroma query — whose client is synchronous and embedded — runs in a thread.
+The query side is [`agent/search.py`](medas-api/agent/search.py) — one function, `search_record(query, patient_id)`, which the agent's tool wraps. The `patient_id` is the signed-in user's, `pat_{users.id}`: `/ask` passes it to `answer()`, which hands it to the run as LangChain runtime context, so the tool reads it without it ever being a tool argument the model could set. An account with no indexed record gets no passages, and is told its record shows nothing relevant. It embeds the query with the same model the corpus was embedded with (Chroma's own MiniLM would be a different space, and the distances meaningless), filters on `patient_id` in the metadata, and returns each passage with its `chunk_id` and distance. Both halves stay off the event loop: the embedding is a real `await`, and the Chroma query — whose client is synchronous and embedded — runs in a thread.
 
 ## Testing
 
-109 tests in medas-api, 30 in medas-ui.
+114 tests in medas-api, 30 in medas-ui.
 
 The agent is stubbed at one seam. `main.ask_agent` is what every test patches, so the model, the tool, the prompt and the vector store all stay out of the suite — otherwise it would be slow, billable, non-deterministic, and impossible in CI where none of them exist. The fake records the turns it was given, which is how the history tests assert on what the agent was actually told.
 
@@ -266,7 +266,6 @@ Working end to end: the chat UI, one endpoint that starts a conversation or cont
 
 Safety and correctness first, because these are the ones that matter if this ever sees a real record.
 
-- **The agent searches one hardcoded record.** Requests are authenticated and conversations are scoped to their owner, but `search_record` is still called with the constant `RECORD_ID` in [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py), not the signed-in user's `pat_{id}`. Every new account gets a `users` row on its first sign-in, so **any signed-in user is answered from that one record** — the seeded patient's — until the agent is given the caller's.
 - **Nothing bounds the agent's search loop.** `create_agent` defaults its recursion limit to 9,999, and the model will keep rephrasing a query it has already run. Observed: a single request accumulating ~112,000 tokens of passages — against a record that is ~2,400 tokens in total — until it exceeded the model's context window and the patient got nothing. Withdrawing the tool after a budget of searches is the fix that worked; a recursion limit alone stops the run but ends it without an answer.
 - **The agent has no error handling.** `answer()` has no try/except, so a failed model call is a 500 rather than something the patient can act on.
 - **The prompt documents a `<patient>` block that is never sent.** Its Inputs section describes identity and demographics arriving with each question; the route sends only the conversation. The model learns who the patient is from the identity line repeated in each retrieved chunk, which works but is not what the prompt says.

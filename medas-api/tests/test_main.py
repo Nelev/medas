@@ -183,6 +183,14 @@ async def test_root_interpolates_the_user_verbatim(client):
 AGENT_REPLY = "Worth seeing your GP this week."
 
 
+class AgentCalls(list):
+    """The turns of each agent call, with the record each was to search."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.record_ids: list[str] = []
+
+
 @pytest.fixture(autouse=True)
 def stub_the_agent(monkeypatch):
     """Answer every route that calls the agent, without reaching OpenRouter.
@@ -194,12 +202,13 @@ def stub_the_agent(monkeypatch):
     Chroma exists.
 
     Records the turns it was given, so a test can assert on what the agent
-    was told.
+    was told, and in `record_ids` which record each call was to search.
     """
-    calls = []
+    calls = AgentCalls()
 
-    async def _answer(turns):
+    async def _answer(turns, *, record_id):
         calls.append(turns)
+        calls.record_ids.append(record_id)
         return AGENT_REPLY
 
     monkeypatch.setattr(main, "ask_agent", _answer)
@@ -216,7 +225,7 @@ async def test_a_json_reply_is_read_for_its_message_and_triage_code(
     what the badge renders from and what an audit reads later.
     """
 
-    async def _json_answer(turns):
+    async def _json_answer(turns, *, record_id):
         return json.dumps(
             {
                 "message": "Worth seeing your GP this week.",
@@ -586,6 +595,22 @@ async def test_health_stays_public(client, fake_session, signed_out):
     response = await client.get("/health/db")
 
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize("conversation", [None, "existing"])
+async def test_the_agent_searches_the_signed_in_users_record(
+    client, fake_session, stub_the_agent, conversation
+):
+    # Both paths through /ask end in the same agent call, and both must hand
+    # it the caller's record -- pat_ followed by their users.id.
+    params = {}
+    if conversation:
+        fake_session._store("assistant", "Hi Mattia, how can I help you?")
+        params["conversationId"] = uuid.uuid4()
+
+    await client.post("/ask", params=params, json=NEW_MESSAGE)
+
+    assert stub_the_agent.record_ids == [f"pat_{USER_ID}"]
 
 
 async def test_ask_takes_the_owner_from_the_session_not_the_query(client, fake_session):
