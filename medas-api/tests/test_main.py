@@ -18,17 +18,20 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 import main
+from auth import current_user
 from database.database import get_session
 from main import app
 
 SERVER_VERSION = "18.0 (Debian 18.0-1)"
 
 # The owning user is a query parameter; the body is just the message.
-USER_ID = "7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
+# Who every request is from: current_user is overridden to return it, so
+# the routes are tested apart from token verification (tests/test_auth.py).
+USER_ID = uuid.UUID("7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0")
 NEW_MESSAGE = {"role": "user", "text": "What is my last episode?"}
 
 # Who the seeded greeting is addressed to. /ask passes a literal name rather
-# than resolving one for USER_ID, so this is not the caller.
+# than resolving one for the signed-in user, so this is not the caller.
 SEEDED_NAME = "Mattia"
 
 # An arbitrary fixed instant for the stored rows. Fixed, so a timestamp
@@ -112,9 +115,22 @@ class FakeSession:
 
 @pytest.fixture
 async def client() -> AsyncIterator[httpx.AsyncClient]:
+    """A client signed in as USER_ID.
+
+    current_user is overridden rather than a token sent, so no route test
+    depends on Clerk; the override goes with the rest on teardown.
+    """
+    app.dependency_overrides[current_user] = lambda: USER_ID
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def signed_out(client) -> None:
+    """Undo the client's sign-in, so the real current_user runs."""
+    del app.dependency_overrides[current_user]
 
 
 @pytest.fixture
@@ -216,7 +232,7 @@ async def test_a_json_reply_is_read_for_its_message_and_triage_code(
 
     response = await client.post(
         "/ask",
-        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        params={"conversationId": uuid.uuid4()},
         json={"role": "user", "text": "My chest hurts."},
     )
 
@@ -243,7 +259,7 @@ async def test_a_prose_reply_is_kept_as_the_answer(
 
     response = await client.post(
         "/ask",
-        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        params={"conversationId": uuid.uuid4()},
         json={"role": "user", "text": "My chest hurts."},
     )
 
@@ -261,7 +277,7 @@ async def test_ask_stores_the_question_and_the_answer(
 
     response = await client.post(
         "/ask",
-        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        params={"conversationId": uuid.uuid4()},
         json={"role": "user", "text": "Can I take ibuprofen?"},
     )
 
@@ -282,7 +298,7 @@ async def test_ask_passes_the_stored_history_to_the_agent(
 
     await client.post(
         "/ask",
-        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        params={"conversationId": uuid.uuid4()},
         json={"role": "user", "text": "Since Tuesday."},
     )
 
@@ -309,7 +325,7 @@ async def test_ask_does_not_show_the_agent_the_question_twice(
 
     await client.post(
         "/ask",
-        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        params={"conversationId": uuid.uuid4()},
         json={"role": "user", "text": "Can I take ibuprofen?"},
     )
 
@@ -334,7 +350,7 @@ async def test_ask_sends_the_whole_thread(client, fake_session, stub_the_agent):
 
     await client.post(
         "/ask",
-        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        params={"conversationId": uuid.uuid4()},
         json={"role": "user", "text": "and now?"},
     )
 
@@ -352,7 +368,7 @@ async def test_ask_on_a_missing_or_deleted_conversation_is_404(
 
     response = await client.post(
         "/ask",
-        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        params={"conversationId": uuid.uuid4()},
         json={"role": "user", "text": "hello"},
     )
 
@@ -377,7 +393,7 @@ async def test_ask_rejects_invalid_payloads(
     # than restating it.
     response = await client.post(
         "/ask",
-        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        params={"conversationId": uuid.uuid4()},
         json=payload,
     )
 
@@ -416,7 +432,7 @@ async def test_ask_with_an_id_does_not_start_another_conversation(
 
     response = await client.post(
         "/ask",
-        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        params={"conversationId": uuid.uuid4()},
         json={"role": "user", "text": "And my medications?"},
     )
 
@@ -432,7 +448,7 @@ async def test_ask_with_an_id_does_not_start_another_conversation(
 async def test_ask_without_an_id_seeds_the_greeting_then_the_first_message(
     client, fake_session
 ):
-    response = await client.post("/ask", params={"userId": USER_ID}, json=NEW_MESSAGE)
+    response = await client.post("/ask", json=NEW_MESSAGE)
 
     assert response.status_code == 201
     body = response.json()
@@ -456,7 +472,7 @@ async def test_ask_without_an_id_seeds_the_greeting_then_the_first_message(
 async def test_the_assistants_reply_carries_no_metadata(client, fake_session):
     # The agent answers in text, so there is no triage code to store. The
     # column is NOT NULL, so what goes in is an empty object, never None.
-    await client.post("/ask", params={"userId": USER_ID}, json=NEW_MESSAGE)
+    await client.post("/ask", json=NEW_MESSAGE)
 
     written = [p for p in fake_session.parameters if p and "metas" in p]
 
@@ -472,7 +488,7 @@ async def test_the_first_turn_is_answered_knowing_the_greeting(
     answered in its light -- exactly as a follow-up is. Asserted because the
     two routes could easily disagree about this and nothing would look wrong.
     """
-    await client.post("/ask", params={"userId": USER_ID}, json=NEW_MESSAGE)
+    await client.post("/ask", json=NEW_MESSAGE)
 
     assert stub_the_agent == [
         [
@@ -490,7 +506,7 @@ async def test_seeded_greeting_ignores_the_caller(client, fake_session):
     user = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 
     previewed = await client.get("/", params={"user": user})
-    created = await client.post("/ask", params={"userId": USER_ID}, json=NEW_MESSAGE)
+    created = await client.post("/ask", json=NEW_MESSAGE)
 
     assert (
         created.json()["messages"][0]["text"]
@@ -505,7 +521,7 @@ async def test_ask_without_an_id_for_an_unknown_user_is_404(client, fake_session
     # The user_id FK is what rejects this; unmapped it would surface as a 500.
     fake_session.error = IntegrityError("INSERT", {}, Exception("fk violation"))
 
-    response = await client.post("/ask", params={"userId": USER_ID}, json=NEW_MESSAGE)
+    response = await client.post("/ask", json=NEW_MESSAGE)
 
     assert response.status_code == 404
     assert not fake_session.committed
@@ -517,7 +533,7 @@ async def test_ask_without_an_id_writes_the_conversation_then_its_messages(
     # Three statements: the conversation, both seeded messages together, and
     # the assistant's reply. The seed is one statement rather than one per
     # message; the reply is separate because the model had not answered yet.
-    await client.post("/ask", params={"userId": USER_ID}, json=NEW_MESSAGE)
+    await client.post("/ask", json=NEW_MESSAGE)
 
     assert len(fake_session.statements) == 3
     assert fake_session.statements[0].startswith("INSERT INTO conversations")
@@ -539,24 +555,94 @@ async def test_ask_without_an_id_writes_the_conversation_then_its_messages(
 async def test_ask_without_an_id_rejects_invalid_payloads(
     client, fake_session, payload
 ):
-    response = await client.post("/ask", params={"userId": USER_ID}, json=payload)
+    response = await client.post("/ask", json=payload)
 
     assert response.status_code == 422
 
 
-async def test_ask_requires_the_user_id_query_parameter(client, fake_session):
-    # userId is a bare str on the handler, so FastAPI makes it a required
-    # query param. Omitting it is a 422 rather than an insert with no owner.
+async def test_ask_signed_out_is_401_and_touches_nothing(
+    client, fake_session, signed_out
+):
     response = await client.post("/ask", json=NEW_MESSAGE)
 
-    assert response.status_code == 422
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
     assert fake_session.statements == []
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("GET", "/?user=mattia"), ("GET", f"/conversations/{uuid.uuid4()}")],
+)
+async def test_every_other_route_is_401_signed_out(
+    client, fake_session, signed_out, method, path
+):
+    response = await client.request(method, path)
+
+    assert response.status_code == 401
+
+
+async def test_health_stays_public(client, fake_session, signed_out):
+    # What a load balancer polls; it knows no user and reads no record.
+    response = await client.get("/health/db")
+
+    assert response.status_code == 200
+
+
+async def test_ask_takes_the_owner_from_the_session_not_the_query(client, fake_session):
+    # The old contract, sent anyway: a userId in the query is ignored rather
+    # than trusted, so it cannot be used to write as someone else.
+    someone_else = uuid.uuid4()
+
+    await client.post("/ask", params={"userId": someone_else}, json=NEW_MESSAGE)
+
+    owners = [p["user_id"] for p in fake_session.parameters if p and "user_id" in p]
+    assert owners
+    assert set(owners) == {USER_ID}
+
+
+async def test_every_conversation_read_and_write_is_scoped_to_the_user(
+    client, fake_session, stub_the_agent
+):
+    # The ownership check is one clause in each statement. Pinned on the
+    # text as well as the parameters, so dropping the clause fails here even
+    # though the fake would still bind a user_id nothing reads.
+    fake_session._store("assistant", "Hi Mattia, how can I help you?")
+
+    await client.post(
+        "/ask",
+        params={"conversationId": uuid.uuid4()},
+        json={"role": "user", "text": "And my medications?"},
+    )
+
+    touching_messages = [
+        (statement, params)
+        for statement, params in zip(
+            fake_session.statements, fake_session.parameters, strict=True
+        )
+        if "messages" in statement
+    ]
+    assert touching_messages
+    for statement, params in touching_messages:
+        assert "c.user_id = :user_id" in statement
+        assert params["user_id"] == USER_ID
+
+
+async def test_someone_elses_conversation_reads_as_missing(client, fake_session):
+    # The statement matches nothing when the owner differs, which the fake
+    # models as matching nothing at all: the same 404 as an unknown id, so
+    # an id cannot be probed for.
+    fake_session.matched = False
+
+    response = await client.get(f"/conversations/{uuid.uuid4()}")
+
+    assert response.status_code == 404
 
 
 async def test_read_conversation_returns_the_whole_history(client, fake_session):
     # What the jsonb array could only give all at once, and what nothing could
     # give at all: the conversation, read back after the fact.
-    created = await client.post("/ask", params={"userId": USER_ID}, json=NEW_MESSAGE)
+    created = await client.post("/ask", json=NEW_MESSAGE)
     conversation_id = created.json()["conversation_id"]
 
     response = await client.get(f"/conversations/{conversation_id}")

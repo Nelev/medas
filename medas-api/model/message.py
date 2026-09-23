@@ -119,13 +119,14 @@ class Message(Base):
 
 # One statement for every write, however many messages it carries.
 #
-# The conversation has to exist and not be soft-deleted, and making that the
-# SELECT's WHERE clause checks it in the same statement that writes -- a
-# SELECT first would leave a window between the check and the write. No rows
-# selected means no rows inserted and nothing returned, which is how the
-# caller learns it matched nothing. (When the caller is an authenticated user
-# rather than a query parameter, `AND c.user_id = :user_id` joins this one
-# WHERE clause and every write path is covered at once.)
+# The conversation has to exist, not be soft-deleted, and belong to the
+# signed-in user, and making that the SELECT's WHERE clause checks it in the
+# same statement that writes -- a SELECT first would leave a window between
+# the check and the write. No rows selected means no rows inserted and nothing
+# returned, which is how the caller learns it matched nothing. Someone else's
+# conversation matches nothing in exactly the same way as a missing one, so a
+# caller cannot tell the two apart, and every write path is covered by this
+# one clause.
 #
 # Parallel arrays rather than a VALUES list, so the statement is fixed text
 # for any number of messages -- built once, at import, and reused. ORDER BY
@@ -141,7 +142,8 @@ _WRITE = text(
     "FROM conversations c "
     "CROSS JOIN unnest(:roles, :contents, :metas) "
     "WITH ORDINALITY AS r(role, content, meta, ord) "
-    "WHERE c.conversation_id = :conversation_id AND NOT c.deleted "
+    "WHERE c.conversation_id = :conversation_id AND c.user_id = :user_id "
+    "AND NOT c.deleted "
     "ORDER BY r.ord "
     "RETURNING message_id, seq, role, content, metadata, created_at"
     ") "
@@ -156,13 +158,15 @@ _WRITE = text(
 )
 
 
-# The join is the soft-delete check: a deleted conversation's messages are
-# still rows, and reading them back would be reading a deleted thread.
+# The join is the soft-delete check and the ownership check: a deleted
+# conversation's messages are still rows, and reading them back would be
+# reading a deleted thread; another user's are rows too, and are theirs.
 _LIST = text(
     "SELECT m.message_id, m.role, m.content, m.metadata AS meta, m.created_at "
     "FROM messages m "
     "JOIN conversations c ON c.conversation_id = m.conversation_id "
-    "WHERE m.conversation_id = :conversation_id AND NOT c.deleted "
+    "WHERE m.conversation_id = :conversation_id AND c.user_id = :user_id "
+    "AND NOT c.deleted "
     "ORDER BY m.seq"
 )
 
@@ -199,18 +203,25 @@ async def add_messages(
     session: AsyncSession,
     conversation_id: uuid.UUID,
     messages: Sequence[tuple[str, str, dict | None]],
+    *,
+    user_id: uuid.UUID,
 ) -> list[dict]:
     """Write messages to a live conversation, in order, as they are given.
 
     Returns them as stored -- read back from the database rather than echoed,
     because message_id and created_at are the database's to mint. Empty if
-    the conversation is unknown or soft-deleted, which is the one signal
-    every caller needs and the only one the statement can give.
+    the conversation is unknown, soft-deleted or not user_id's, which is the
+    one signal every caller needs and the only one the statement can give.
+
+    user_id is keyword-only: it sits beside another uuid, and two positional
+    ids of the same type are one transposition from reading a stranger's
+    thread.
     """
     result = await session.execute(
         _WRITE,
         {
             "conversation_id": conversation_id,
+            "user_id": user_id,
             "roles": [role for role, _, _ in messages],
             "contents": [content for _, content, _ in messages],
             "metas": [json.dumps(meta or {}) for _, _, meta in messages],
@@ -225,6 +236,8 @@ async def append_message(
     role: str,
     message_text: str,
     extra: dict | None = None,
+    *,
+    user_id: uuid.UUID,
 ) -> dict | None:
     """Add one message. Returns it, or None if no live conversation matched.
 
@@ -234,22 +247,25 @@ async def append_message(
     later cannot collide with a column.
     """
     written = await add_messages(
-        session, conversation_id, [(role, message_text, extra)]
+        session, conversation_id, [(role, message_text, extra)], user_id=user_id
     )
-    # Nothing written means the conversation is absent or soft-deleted.
+    # Nothing written means the conversation is absent, soft-deleted or not
+    # this user's.
     # Without this the route would report success on a write that never
     # happened.
     return written[0] if written else None
 
 
 async def list_messages(
-    session: AsyncSession, conversation_id: uuid.UUID
+    session: AsyncSession, conversation_id: uuid.UUID, *, user_id: uuid.UUID
 ) -> list[dict]:
-    """Every message in a conversation, oldest first.
+    """Every message in one of user_id's conversations, oldest first.
 
-    Empty for a conversation that is unknown or soft-deleted -- and only for
-    those, since a live conversation always holds at least the greeting it
-    was seeded with.
+    Empty for a conversation that is unknown, soft-deleted or someone else's
+    -- and only for those, since a live conversation always holds at least
+    the greeting it was seeded with.
     """
-    result = await session.execute(_LIST, {"conversation_id": conversation_id})
+    result = await session.execute(
+        _LIST, {"conversation_id": conversation_id, "user_id": user_id}
+    )
     return [_wire(row) for row in result]
