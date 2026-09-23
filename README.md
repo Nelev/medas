@@ -4,29 +4,32 @@ A personal medical assistant: a chat UI over a patient's own medical history, an
 
 Two packages, deployed and developed separately:
 
-|                          |                      |                                                        |
-| ------------------------ | -------------------- | ------------------------------------------------------ |
-| [`medas-api`](medas-api) | FastAPI, Python 3.14 | Chat endpoints, Postgres persistence, the RAG pipeline |
-| [`medas-ui`](medas-ui)   | Next.js 16, React 19 | Chat interface                                         |
+|                          |                      |                                                       |
+| ------------------------ | -------------------- | ----------------------------------------------------- |
+| [`medas-api`](medas-api) | FastAPI, Python 3.14 | Chat endpoint, Postgres persistence, the RAG pipeline |
+| [`medas-ui`](medas-ui)   | Next.js 16, React 19 | Chat interface                                        |
 
 ## How a message flows
 
 Every request to medas-api is made by the Next server. The browser only ever talks to its own origin:
 
-| Step                | Who calls                              | Call                                                                                            |
-| ------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Page load           | The Next server, in a Server Component | `GET /?user=…` → the greeting, not persisted                                                    |
-| First message       | The Next server, in a Server Action    | `POST /conversations?userId=…` → creates it, searches the record if the model asks, and answers |
-| Every message after | The Next server, in a Server Action    | `POST /conversations/{id}/messages` → appends                                                   |
+| Step          | Who calls                              | Call                                                                     |
+| ------------- | -------------------------------------- | ------------------------------------------------------------------------ |
+| Page load     | The Next server, in a Server Component | `GET /?user=…` → the greeting, not persisted                             |
+| Every message | The Next server, in a Server Action    | `POST /ask?userId=…[&conversationId=…]` → stores the turn and answers it |
 
-That is what keeps the API's origin out of the browser bundle, removes any need for CORS, and lets one build run in any environment. The conversation id is held in a client-side store, which is how the composer knows which of the two calls to make. Nothing is read back: the UI keeps the history it was given, so a reload starts from the greeting again.
+That is what keeps the API's origin out of the browser bundle, removes any need for CORS, and lets one build run in any environment.
+
+One endpoint answers every message. `conversationId` is optional: without it the API starts a conversation and seeds the greeting, with it the message is appended to that thread. A caller that has just opened the app does not have to know which case it is in, so the composer has no branch — it passes whatever id it holds, which is empty on the first send. The id comes back in the response and lives in a client-side store.
+
+Nothing is read back: the UI keeps the history it was given, so a reload starts from the greeting again.
 
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) — installs Python 3.14 itself, so no system Python is needed
 - Node 20+ and Yarn 4 (pinned by `packageManager`; `corepack enable` honours it)
 - Postgres 13 or newer — `gen_random_uuid()` is the only version-sensitive dependency
-- An [OpenRouter](https://openrouter.ai) key. The API needs it now, not only the pipeline: answering a message means an embedding call and a model call.
+- An [OpenRouter](https://openrouter.ai) key. Answering a message means an embedding call per search and several model calls.
 
 ## Setup
 
@@ -81,10 +84,7 @@ That `INSERT` works just as well through `psql` — note the Windows installer d
 
 ### Build the vector index
 
-The API searches this at every message, so it has to exist first — an empty or
-absent Chroma store means no passages and an answer with nothing to cite. See
-[RAG pipeline](#rag-pipeline); it is one command, and it costs one batch of
-embedding calls.
+The agent searches this to answer anything about the patient, so it has to exist first — an empty or absent Chroma store means no passages and an answer with nothing to cite. See [RAG pipeline](#rag-pipeline); it is one command, and it costs one batch of embedding calls.
 
 ### UI
 
@@ -98,7 +98,7 @@ yarn install
 | Variable             | Read by                                            | Default                 | If it is wrong                           |
 | -------------------- | -------------------------------------------------- | ----------------------- | ---------------------------------------- |
 | `API_BASE_URL`       | The Next **server** → `api/init.ts`, `api/chat.ts` | `http://localhost:8000` | The page fails to render, and sends fail |
-| `OPENROUTER_API_KEY` | medas-api — embeddings and the model call          | none                    | Answering fails; the API still starts    |
+| `OPENROUTER_API_KEY` | medas-api — embeddings and the model calls         | none                    | Answering fails; the API still starts    |
 
 `API_BASE_URL` has no `NEXT_PUBLIC_` counterpart on purpose. A `NEXT_PUBLIC_` value is inlined into the bundle at build time, so a built artefact would carry whatever URL the build machine had and the browser would call the API cross-origin. Read on the server at request time instead, it can be changed per environment without rebuilding.
 
@@ -124,35 +124,39 @@ cd medas-api && uv run ruff check . && uv run ruff format --check . && uv run py
 cd medas-ui && yarn lint && yarn format:check && yarn tsc --noEmit && yarn test
 ```
 
-Both suites are unit-only by design — no database, no API, no browser — so they run unchanged in CI. `yarn test:watch` reruns on change.
+Both suites are unit-only by design — no database, no API, no model, no browser — so they run unchanged in CI. `yarn test:watch` reruns on change.
 
 ## API surface
 
-| Method | Path                           | Request                | Response                                                                                  |
-| ------ | ------------------------------ | ---------------------- | ----------------------------------------------------------------------------------------- |
-| `GET`  | `/?user=<id>`                  | —                      | `{messages: [{role, text}]}` — the greeting, not persisted                                |
-| `POST` | `/conversations?userId=<uuid>` | `{role, text}`         | `201 {conversation_id, messages}` — greeting, the message, **and** the assistant's answer |
-| `POST` | `/conversations/{id}/messages` | `{role, text}`         | `201 {role, text, message_id, timestamp}`                                                 |
-| `GET`  | `/conversations/{id}`          | —                      | `{conversation_id, messages}` — the whole history, oldest first                           |
-| `GET`  | `/health/db`                   | —                      | `{status, server_version}`                                                                |
-| `POST` | `/messages`                    | `{message, user_name}` | Echo stub from an earlier iteration. Unused.                                              |
+| Method | Path                                         | Request        | Response                                                         |
+| ------ | -------------------------------------------- | -------------- | ---------------------------------------------------------------- |
+| `GET`  | `/?user=<id>`                                | —              | `{messages: [{role, text}]}` — the greeting, not persisted       |
+| `POST` | `/ask?userId=<uuid>[&conversationId=<uuid>]` | `{role, text}` | `201 {conversation_id, messages}` — the turns this request added |
+| `GET`  | `/conversations/{id}`                        | —              | `{conversation_id, messages}` — the whole history, oldest first  |
+| `GET`  | `/health/db`                                 | —              | `{status, server_version}`                                       |
 
-Two things that trip people up: the owning user is a **query parameter** on create, not a body field, and the message goes in the body **flat** — a `{message: {...}}` wrapper is a 422.
+`POST /ask` returns **what it added**, not the whole thread: three turns when it started the conversation (the greeting, the question, the answer) and two when it appended (the question and the answer). Either way the client appends them to what it already has.
 
-`message_id` and `timestamp` are minted server-side and ignored if sent. An assistant turn also carries `severity` (`S1`–`S5`) and `confidence`, stored with the message rather than returned alone: which triage code was given, and when, is what an audit asks about later. An unknown or soft-deleted conversation is a `404` on append, never an implicit create — that would resurrect deleted threads and let a caller choose its own primary key.
+Two things that trip people up: the owning user is a **query parameter**, not a body field, and the message goes in the body **flat** — a `{message: {...}}` wrapper is a 422.
+
+`message_id` and `timestamp` are minted server-side and ignored if sent. An assistant turn also carries `severity` (`S1`–`S5`) and `confidence` when the model returned them, stored with the message rather than returned alone: which triage code was given, and when, is what an audit asks about later. An unknown or soft-deleted conversation is a `404`, never an implicit create — that would resurrect deleted threads and let a caller choose its own primary key.
 
 ### How an answer is produced
 
-Creating a conversation does four things before it responds:
+The route does not run a tool loop of its own. It assembles the conversation, hands it to a LangChain agent, and stores what comes back.
 
-1. **Builds the `<patient>` block** from the database — `users` says who may ask, the record says who they are, joined by the convention that a record id is `pat_` plus the user's uuid. That convention is checked, not assumed: a record that does not belong to the caller is an error rather than someone else's demographics.
-2. **Asks the model** with [`agent/assistant_general_prompt.py`](medas-api/agent/assistant_general_prompt.py) as the system message, `<patient>` and `<message>` as the user turn, and `search_record` declared as a tool. The prompt stays byte-identical between requests, which is what lets a provider cache it.
-3. **Runs the search, if the model asks for one.** The model cannot reach Chroma; only this process can, so a tool call is a question rather than an answer. The passages go back as a `function_call_output` paired to the call by `call_id`, and the model is asked again with them in hand. It searches in its own wording and only when the question needs the record — "thanks, that is all" costs one call and no search. The `patient_id` used is always `record_id(userId)`, never the one in the model's arguments: those are generated text, and a message claiming a different record id must not become a read of somebody else's chart.
-4. **Parses the reply behind a guard.** A model that answers in prose, omits a field, or invents a severity code is ordinary rather than exceptional, so each becomes a visible fallback instead of a 500 — and that fallback is `S2`, never lower, because a triage answer that could not be read must not imply the symptom was mild.
+1. **Assembles the turns.** Every stored message becomes `{role, content}` — the wire calls the field `text`, a chat model calls it `content` — and the new question goes last. The whole thread is sent, so the model answers in the context of everything said before rather than the last message alone.
+2. **Runs the agent.** [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py) is a `create_agent` graph with one tool and [`agent/assistant_general_prompt.py`](medas-api/agent/assistant_general_prompt.py) as its system prompt. The graph decides for itself whether to search, how many times, and when it has enough to answer — which is the thing the hand-rolled loop this replaced could not do.
+3. **Searches when it asks to.** The model cannot reach Chroma; only this process can, so a tool call is a question rather than an answer. `search_patient_record(query)` takes **only** a query: whose record is searched is fixed by the service, not chosen by the model, so a message claiming a different record id cannot become a read of somebody else's chart.
+4. **Reads the reply.** The prompt specifies one JSON object, so the route parses it for `message` — what the patient sees — and stores `severity` and `confidence` as metadata.
 
 The prompt triages rather than diagnoses: a ranked differential, an explicit confidence, clarifying questions whenever that confidence is not high, and a severity rated on the **worst plausible cause** rather than the most likely one. Red flags lead the reply and force `S1`.
 
-The model is `openai/gpt-4o-mini`, hardcoded in [`main.py`](medas-api/main.py).
+The model is `openai/gpt-4o-mini`, named in [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py).
+
+**The JSON is enforced by the transport, not just requested by the prompt.** `extra_body={"response_format": {"type": "json_object"}}` is on the chat model. That distinction cost real time and is worth recording: passing the same thing as `model_kwargs` does **not** work, because langchain routes through the OpenAI SDK's parsing helper whenever `response_format` is in the payload it builds, and that helper rejects any tool that is not `strict` (`search_patient_record is not strict`). `extra_body` reaches the provider without passing through that check.
+
+Even so the model sometimes answers in prose — most often on a red flag, where it drops the format and writes the warning out directly. That reply is a good answer, so the route keeps it and shows it as it stands; only the triage code is lost with it, and the turn renders without a badge.
 
 ### Data model
 
@@ -185,18 +189,22 @@ Each chunk repeats the patient identity line, because retrieval hands the model 
 
 The embedding calls are billable, so they are behind `run()` rather than at module level: importing the module fires nothing.
 
-The query side is [`agent/search.py`](medas-api/agent/search.py) — one function, `search_record(query, patient_id)`, which is what the model's tool call lands on. It embeds the query with the same model the corpus was embedded with (Chroma's own MiniLM would be a different space, and the distances meaningless), filters on `patient_id` in the metadata, and returns each passage with its `chunk_id` and distance.
+The query side is [`agent/search.py`](medas-api/agent/search.py) — one function, `search_record(query, patient_id)`, which the agent's tool wraps. It embeds the query with the same model the corpus was embedded with (Chroma's own MiniLM would be a different space, and the distances meaningless), filters on `patient_id` in the metadata, and returns each passage with its `chunk_id` and distance. Both halves stay off the event loop: the embedding is a real `await`, and the Chroma query — whose client is synchronous and embedded — runs in a thread.
 
 ## Testing
 
-The frontend has 23 unit tests, in two files:
+79 tests in medas-api, 20 in medas-ui.
+
+The agent is stubbed at one seam. `main.ask_agent` is what every test patches, so the model, the tool, the prompt and the vector store all stay out of the suite — otherwise it would be slow, billable, non-deterministic, and impossible in CI where none of them exist. The fake records the turns it was given, which is how the history tests assert on what the agent was actually told.
+
+On the frontend:
 
 - [`medas-ui/api/chat.test.ts`](medas-ui/api/chat.test.ts) stubs `globalThis.fetch` rather than mocking the module, so URL building and response mapping actually run — every bug this file has had lived in exactly those two places.
-- [`medas-ui/components/chat/chat-composer.test.tsx`](medas-ui/components/chat/chat-composer.test.tsx) mocks the API client instead, and covers which of the two calls the composer picks, and what it shows when one fails.
+- [`medas-ui/components/chat/chat-composer.test.tsx`](medas-ui/components/chat/chat-composer.test.tsx) mocks the API client instead, and covers what the composer sends, what it does with the answer, and what it shows when a send fails.
 
 API response shapes live in `medas-ui/test/fixtures.ts`, so a contract change is a one-file edit. `test/setup.ts` resets the store before each test — it is a module singleton, so without that, whichever test ran first would decide the next one's result.
 
-One test pins a trade-off rather than a defect: the field is cleared optimistically on submit and stays cleared when the send fails, so retrying means retyping. Flip that test if the draft is ever restored.
+Two tests pin trade-offs rather than defects. The field is cleared optimistically on submit and stays cleared when the send fails, so retrying means retyping. And the whole thread is sent to the model unwindowed — asserted deliberately, so the cost is visible rather than accidental.
 
 ## CI
 
@@ -219,7 +227,11 @@ The build needs no API. `/` renders per request, so nothing is fetched while bui
 
 **An answer arrives with no citations, saying the record does not cover it.** The Chroma index is missing or empty — build it with the RAG pipeline. The API does not fail without it; it answers from general knowledge and says so, which is harder to notice.
 
-**Creating a conversation 500s.** Usually `OPENROUTER_API_KEY`: the key is read when the first model call is made, not at startup, so the API boots happily and fails on the first message.
+**A reply arrives with no severity badge.** The model answered in prose instead of the JSON the prompt asks for. The text is a real answer and is shown as-is; only the code is missing.
+
+**Sending 500s.** Usually `OPENROUTER_API_KEY`: it is read when the agent's graph is first built, on the first request, so the API boots happily and fails on the first message. The agent has no error handling of its own, so anything the model call raises reaches the client as a 500.
+
+**A reply takes a very long time, or fails with a context-length error.** The agent kept searching. Nothing bounds its loop — see Known gaps.
 
 **`Cannot find name 'LayoutProps'`.** Route types have not been generated. Run `yarn next typegen`, or any `yarn dev` / `yarn build`.
 
@@ -227,19 +239,25 @@ The build needs no API. `/` renders per request, so nothing is fetched while bui
 
 ## Status
 
-Working end to end: the chat UI, creating a conversation and getting a triaged answer grounded in the patient's record, appending further messages, Postgres persistence, and the chunking and embedding pipeline with its Chroma index.
+Working end to end: the chat UI, one endpoint that starts a conversation or continues it, multi-turn answers grounded in the patient's record with the triage code rendered as a badge, Postgres persistence, and the chunking and embedding pipeline with its Chroma index.
 
-Not built yet:
+### Known gaps
 
-- **Only the first message is answered.** `POST /conversations` asks the model, tool call and all; `POST /conversations/{id}/messages` stores the message and returns, with no model call at all. So a conversation gets exactly one answer.
-- **The severity never reaches the patient.** It is stored with the assistant turn and returned in the payload, but the UI renders only the text — so an `S1` looks like any other reply.
-- **One search round only.** If the model answers a tool result by asking to search again, there is no third call: `output_text` is empty, the parse falls through, and the patient gets the unavailable fallback at `S2`. Safe, but not an answer. A bounded loop around the two rounds closes it.
+Safety and correctness first, because these are the ones that matter if this ever sees a real record.
+
+- **No auth, and no ownership check.** The user is a hardcoded constant in the UI, `userId` is a query parameter on a public endpoint, and `/ask` never checks that `conversationId` belongs to `userId`. Anyone who can reach medas-api can read or write any patient's conversation by guessing an id. The two identifiers arriving on the same request makes the pair _look_ checked; it is not.
+- **Nothing bounds the agent's search loop.** `create_agent` defaults its recursion limit to 9,999, and the model will keep rephrasing a query it has already run. Observed: a single request accumulating ~112,000 tokens of passages — against a record that is ~2,400 tokens in total — until it exceeded the model's context window and the patient got nothing. Withdrawing the tool after a budget of searches is the fix that worked; a recursion limit alone stops the run but ends it without an answer.
+- **The agent has no error handling.** `answer()` has no try/except, so a failed model call is a 500 rather than something the patient can act on.
+- **The prompt documents a `<patient>` block that is never sent.** Its Inputs section describes identity and demographics arriving with each question; the route sends only the conversation. The model learns who the patient is from the identity line repeated in each retrieved chunk, which works but is not what the prompt says.
+- **History is sent whole.** Every stored turn goes to the model on every request, and the transcript is re-sent on each turn within a run, so a long thread costs more with every message in it.
 - **A search returns five passages.** `n_results=5`, so a question like "what episodes are in my record?" is answered from the five nearest chunks — the record holds ten episodes, and the model has no way to know it saw half of them.
-- **The model call and the record search block the event loop.** Both are synchronous inside an async handler, so every other request waits out the round trip.
-- **No auth.** The user is a hardcoded constant in the UI and `userId` is a query parameter on a public endpoint — so anyone who can reach medas-api can read or write any patient's conversation by guessing an id. It must come from an authenticated session before this handles a real record.
-- **The greeting is addressed to a hardcoded `"Mattia"`** in two places — `init.ts` ignores its own `user` argument, and `start_conversation` passes a literal — so the name shown has nothing to do with whose record is loaded.
+
+Then the smaller ones:
+
+- **No history on reload.** `GET /conversations/{id}` exists, but nothing calls it: the UI keeps the history it was given in memory, so a refresh returns to the greeting with the stored conversation orphaned.
+- **The greeting is addressed to a hardcoded `"Mattia"`** in two places — `init.ts` ignores its own `user` argument, and the create path passes a literal — so the name shown has nothing to do with whose record is loaded.
 - **`userId` is typed `str`, not `UUID`**, so a malformed id is a 500 from the driver rather than a 422.
-- **No history on reload.** `GET /conversations/{id}` exists, but nothing calls it: the UI keeps the history it was given in memory, so a refresh still returns to the greeting with the stored conversation orphaned.
 - **No idempotency.** A double-submitted first message creates two conversations.
 - **A submit before hydration is lost.** The composer uses an `onSubmit` handler rather than a form action, so a submission made before React hydrates navigates to `/?message=…` and the message is dropped. React queues submissions for a `<form action={…}>`; a plain handler cannot.
+- **Dead code left by the move to the agent.** [`agent/patient.py`](medas-api/agent/patient.py) — `patient_block`, `record_block`, `record_id`, `UnknownPatient` — has no callers at all; it held the check that a record belongs to the user asking, which nothing performs now. `NewConversation` in `schema/schema.py` is likewise unreferenced.
 - **pgvector is not installed.** Embeddings live in Chroma; moving them into Postgres needs a source build on Windows.
