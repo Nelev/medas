@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { postMessage, startNewConversation } from "@/api/chat"
+import { ask } from "@/api/chat"
 import {
+  askedTurns,
   CONVERSATION_ID,
   createdConversation,
   jsonResponse,
   storedMessage,
+  storedReply,
   USER_ID,
 } from "@/test/fixtures"
 
@@ -28,102 +30,49 @@ const requestFrom = (fetchMock: ReturnType<typeof vi.fn>) => {
   return { url, init, body: JSON.parse(String(init.body)) }
 }
 
-describe("startNewConversation", () => {
-  beforeEach(() => {
-    stubFetch(jsonResponse(createdConversation, 201))
-  })
+describe("ask", () => {
+  it("posts to /ask with the owner and the conversation", async () => {
+    const fetchMock = stubFetch(jsonResponse(askedTurns, 201))
 
-  it("posts to /conversations with the owner as a query parameter", async () => {
-    const fetchMock = stubFetch(jsonResponse(createdConversation, 201))
-
-    await startNewConversation({
-      role: "user",
-      text: "Do I have any allergies?",
-    })
+    await ask({ role: "user", text: "And my medications?" }, CONVERSATION_ID)
 
     const { url, init } = requestFrom(fetchMock)
+    const { searchParams, pathname } = new URL(url)
 
-    expect(url).toBe(`http://localhost:8000/conversations?userId=${USER_ID}`)
+    expect(pathname).toBe("/ask")
+    expect(searchParams.get("userId")).toBe(USER_ID)
+    expect(searchParams.get("conversationId")).toBe(CONVERSATION_ID)
     expect(init.method).toBe("POST")
     expect(init.headers).toMatchObject({ "Content-Type": "application/json" })
   })
 
-  it("sends the message flat rather than wrapped", async () => {
+  it("omits the conversation when there is not one yet", async () => {
+    // Absent, not empty: the API starts a conversation when the parameter is
+    // missing, and an empty one would be a 422 rather than a new thread.
     const fetchMock = stubFetch(jsonResponse(createdConversation, 201))
 
-    await startNewConversation({
-      role: "user",
-      text: "Do I have any allergies?",
-    })
+    await ask({ role: "user", text: "Do I have any allergies?" })
 
-    // The API expects NewMessage at the top level. A { message: ... } wrapper
-    // is a 422, which is how this was written before.
-    expect(requestFrom(fetchMock).body).toEqual({
-      role: "user",
-      text: "Do I have any allergies?",
-    })
+    const { searchParams } = new URL(requestFrom(fetchMock).url)
+
+    expect(searchParams.has("conversationId")).toBe(false)
+    expect(searchParams.get("userId")).toBe(USER_ID)
   })
 
-  it("maps the snake_case id the API returns to camelCase", async () => {
+  it("returns the whole opening when it started the conversation", async () => {
     stubFetch(jsonResponse(createdConversation, 201))
 
-    const created = await startNewConversation({ role: "user", text: "hi" })
+    const { conversationId, turns } = await ask({ role: "user", text: "hi" })
 
-    expect(created.conversationId).toBe(CONVERSATION_ID)
-    // The property the API actually sends must not leak past this boundary.
-    expect(created).not.toHaveProperty("conversation_id")
-  })
-
-  it("returns every seeded message, not just the one that was sent", async () => {
-    stubFetch(jsonResponse(createdConversation, 201))
-
-    const created = await startNewConversation({ role: "user", text: "hi" })
-
-    // The API seeds the greeting alongside the first message, so the reply is
-    // the whole history. A caller that appends this instead of replacing ends
-    // up showing the greeting twice.
-    expect(created.messages).toHaveLength(2)
-    expect(created.messages.map((message) => message.role)).toEqual([
-      "assistant",
-      "user",
-    ])
-  })
-
-  it("rejects when the user is unknown", async () => {
-    stubFetch(jsonResponse({ detail: "User not found" }, 404))
-
-    await expect(
-      startNewConversation({ role: "user", text: "hi" }),
-    ).rejects.toThrow("404")
-  })
-})
-
-describe("postMessage", () => {
-  it("posts to the conversation's own messages path", async () => {
-    const fetchMock = stubFetch(jsonResponse(storedMessage, 201))
-
-    await postMessage(
-      { role: "user", text: "And my medications?" },
-      CONVERSATION_ID,
-    )
-
-    const { url } = requestFrom(fetchMock)
-
-    expect(url).toBe(
-      `http://localhost:8000/conversations/${CONVERSATION_ID}/messages`,
-    )
-    // A doubled slash resolves to a different path on some servers and is
-    // exactly the typo this file shipped with once.
-    expect(url).not.toContain("//conversations")
+    expect(conversationId).toBe(CONVERSATION_ID)
+    // The greeting the API seeded, and the question.
+    expect(turns.map((turn) => turn.role)).toEqual(["assistant", "user"])
   })
 
   it("sends the message flat rather than wrapped", async () => {
-    const fetchMock = stubFetch(jsonResponse(storedMessage, 201))
+    const fetchMock = stubFetch(jsonResponse(askedTurns, 201))
 
-    await postMessage(
-      { role: "user", text: "And my medications?" },
-      CONVERSATION_ID,
-    )
+    await ask({ role: "user", text: "And my medications?" }, CONVERSATION_ID)
 
     expect(requestFrom(fetchMock).body).toEqual({
       role: "user",
@@ -131,24 +80,21 @@ describe("postMessage", () => {
     })
   })
 
-  it("returns the stored message with the fields the server minted", async () => {
-    stubFetch(jsonResponse(storedMessage, 201))
+  it("returns the stored turn and the agent's reply to it", async () => {
+    stubFetch(jsonResponse(askedTurns, 201))
 
-    const stored = await postMessage(
-      { role: "user", text: "x" },
-      CONVERSATION_ID,
-    )
+    const { turns } = await ask({ role: "user", text: "x" }, CONVERSATION_ID)
 
-    expect(stored).toEqual(storedMessage)
-    expect(stored.message_id).toBeTruthy()
-    expect(stored.timestamp).toBeTruthy()
+    expect(turns).toEqual([storedMessage, storedReply])
+    expect(turns[0].message_id).toBeTruthy()
+    expect(turns[0].timestamp).toBeTruthy()
   })
 
   it("rejects when the conversation is unknown or soft-deleted", async () => {
     stubFetch(jsonResponse({ detail: "Conversation not found" }, 404))
 
     await expect(
-      postMessage({ role: "user", text: "x" }, CONVERSATION_ID),
+      ask({ role: "user", text: "x" }, CONVERSATION_ID),
     ).rejects.toThrow("404")
   })
 
@@ -158,7 +104,7 @@ describe("postMessage", () => {
     stubFetch(Promise.reject(new TypeError("Failed to fetch")))
 
     await expect(
-      postMessage({ role: "user", text: "x" }, CONVERSATION_ID),
+      ask({ role: "user", text: "x" }, CONVERSATION_ID),
     ).rejects.toThrow("Failed to fetch")
   })
 })

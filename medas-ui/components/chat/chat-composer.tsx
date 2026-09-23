@@ -2,7 +2,7 @@
 import { SendHorizontal, TriangleAlert } from "lucide-react"
 import { SyntheticEvent } from "react"
 
-import { postMessage, startNewConversation } from "@/api/chat"
+import { ask } from "@/api/chat"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useChatStore } from "@/store/store"
@@ -30,18 +30,14 @@ export function ChatComposer() {
     setError("")
 
     try {
-      // No id yet -> this message creates the conversation.
-      if (!conversationId) {
-        const created = await startNewConversation({ role: "user", text })
-        setConversationId(created.conversationId)
-        // Replace, don't append: the API seeds the greeting alongside the
-        // first message, so its copy is the whole history.
-        setMessages(created.messages)
-        return
-      }
+      // One call whether or not a conversation exists: without an id the
+      // API starts one and the greeting comes back among the turns. The
+      // store is empty until the first send, so appending then is the same
+      // as replacing -- the greeting does not end up rendered twice.
+      const result = await ask({ role: "user", text }, conversationId)
 
-      const stored = await postMessage({ role: "user", text }, conversationId)
-      setMessages([...messages, stored])
+      setConversationId(result.conversationId)
+      setMessages([...messages, ...result.turns])
     } catch (cause) {
       // The message was never stored, so nothing is added to the list -- the
       // banner below is the only trace, and without it the send looks like it

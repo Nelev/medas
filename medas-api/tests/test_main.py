@@ -27,8 +27,8 @@ SERVER_VERSION = "18.0 (Debian 18.0-1)"
 USER_ID = "7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 NEW_MESSAGE = {"role": "user", "text": "What is my last episode?"}
 
-# Who the seeded greeting is addressed to. start_conversation passes a literal
-# name rather than resolving one for USER_ID, so this is not the caller.
+# Who the seeded greeting is addressed to. /ask passes a literal name rather
+# than resolving one for USER_ID, so this is not the caller.
 SEEDED_NAME = "Mattia"
 
 # An arbitrary fixed instant for the stored rows. Fixed, so a timestamp
@@ -117,45 +117,6 @@ async def client() -> AsyncIterator[httpx.AsyncClient]:
         yield c
 
 
-# What the stubbed model answers with, so a test can assert on it.
-CANNED_ANSWER = {
-    "message": "Worth seeing your GP this week.",
-    "severity": "S3",
-    "confidence": "moderate",
-}
-
-
-@pytest.fixture(autouse=True)
-def stub_the_assistant(monkeypatch) -> None:
-    """Keep the model, the vector store and the record file out of the suite.
-
-    Without this, creating a conversation reaches OpenRouter and Chroma: slow,
-    billable, non-deterministic, and impossible in CI where neither exists.
-    """
-
-    async def _patient(session, user_id):
-        return "name: Test Patient"
-
-    # The Responses API shape: output is a list of items, and output_text is
-    # the text of them joined. An empty output means "no tool call", which is
-    # what ends the loop in main.
-    response = SimpleNamespace(output=[], output_text=json.dumps(CANNED_ANSWER))
-
-    async def _search(*args, **kwargs):
-        return []
-
-    # Coroutine functions, because the route awaits both: a plain lambda here
-    # returns a value the route would then try to await.
-    async def _create(**kwargs):
-        return response
-
-    monkeypatch.setattr(main, "patient_block", _patient)
-    monkeypatch.setattr(main, "search_record", _search)
-    fake_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
-
-    monkeypatch.setattr(main, "get_client", lambda: fake_client)
-
-
 @pytest.fixture
 def fake_session() -> AsyncIterator[FakeSession]:
     """Override the session dependency, and undo it afterwards.
@@ -202,6 +163,227 @@ async def test_root_interpolates_the_user_verbatim(client):
     assert response.json()["messages"][0]["text"] == f"Hi {user}, how can I help you?"
 
 
+# What the stubbed agent answers with. Text, because that is what the agent
+# returns: the reply is the last message of the run.
+AGENT_REPLY = "Worth seeing your GP this week."
+
+
+@pytest.fixture(autouse=True)
+def stub_the_agent(monkeypatch):
+    """Answer every route that calls the agent, without reaching OpenRouter.
+
+    Autouse, and the only seam there is: every question goes through /ask and
+    then ask_agent, so stubbing it keeps the model, the tool and the vector
+    store out of the suite entirely. Without it the suite would be slow, billable,
+    non-deterministic, and impossible in CI where neither the model nor
+    Chroma exists.
+
+    Records the turns it was given, so a test can assert on what the agent
+    was told.
+    """
+    calls = []
+
+    async def _answer(turns):
+        calls.append(turns)
+        return AGENT_REPLY
+
+    monkeypatch.setattr(main, "ask_agent", _answer)
+
+    return calls
+
+
+async def test_a_json_reply_is_read_for_its_message_and_triage_code(
+    client, fake_session, monkeypatch
+):
+    """The shape the prompt actually asks for.
+
+    The patient reads `message`; the code rides along as metadata, which is
+    what the badge renders from and what an audit reads later.
+    """
+
+    async def _json_answer(turns):
+        return json.dumps(
+            {
+                "message": "Worth seeing your GP this week.",
+                "severity": "S3",
+                "confidence": "moderate",
+                "safety_net": "Come back sooner if it worsens.",
+            }
+        )
+
+    monkeypatch.setattr(main, "ask_agent", _json_answer)
+    fake_session._store("assistant", "Hi Mattia, how can I help you?")
+
+    response = await client.post(
+        "/ask",
+        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        json={"role": "user", "text": "My chest hurts."},
+    )
+
+    reply = response.json()["messages"][1]
+
+    # The message, not the object it arrived in.
+    assert reply["text"] == "Worth seeing your GP this week."
+    assert reply["severity"] == "S3"
+    assert reply["confidence"] == "moderate"
+    # Only the two the route reads. The prompt's other fields are answered and
+    # discarded, which is a choice worth noticing if one of them is ever
+    # wanted.
+    assert "safety_net" not in reply
+
+
+async def test_a_prose_reply_is_kept_as_the_answer(
+    client, fake_session, stub_the_agent
+):
+    """The model drops the format on its own judgement, most often on a red
+    flag -- and that reply is a good answer, so it is shown rather than
+    discarded. Only the triage code is lost with it.
+    """
+    fake_session._store("assistant", "Hi Mattia, how can I help you?")
+
+    response = await client.post(
+        "/ask",
+        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        json={"role": "user", "text": "My chest hurts."},
+    )
+
+    reply = response.json()["messages"][1]
+
+    assert reply["text"] == AGENT_REPLY
+    assert "severity" not in reply
+
+
+async def test_ask_stores_the_question_and_the_answer(
+    client, fake_session, stub_the_agent
+):
+    # A turn already on the record, so the conversation reads as live.
+    fake_session._store("assistant", "Hi Mattia, how can I help you?")
+
+    response = await client.post(
+        "/ask",
+        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        json={"role": "user", "text": "Can I take ibuprofen?"},
+    )
+
+    assert response.status_code == 201
+    sent, reply = response.json()["messages"]
+    assert (sent["role"], sent["text"]) == ("user", "Can I take ibuprofen?")
+    assert (reply["role"], reply["text"]) == ("assistant", AGENT_REPLY)
+    assert fake_session.committed
+
+
+async def test_ask_passes_the_stored_history_to_the_agent(
+    client, fake_session, stub_the_agent
+):
+    """The point of reading the table: the agent is told what was said before."""
+    fake_session._store("assistant", "Hi Mattia, how can I help you?")
+    fake_session._store("user", "I have been wheezing.")
+    fake_session._store("assistant", "Since when?")
+
+    await client.post(
+        "/ask",
+        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        json={"role": "user", "text": "Since Tuesday."},
+    )
+
+    # `content`, not `text`: the wire's name for the field is not the model's.
+    # The prior turns, then the question -- and no system turn, which belongs
+    # to the agent.
+    # `content`, not `text`: the wire's name for the field is not the model's.
+    # The stored turns, oldest first, then the question being asked.
+    assert stub_the_agent == [
+        [
+            {"role": "assistant", "content": "Hi Mattia, how can I help you?"},
+            {"role": "user", "content": "I have been wheezing."},
+            {"role": "assistant", "content": "Since when?"},
+            {"role": "user", "content": "Since Tuesday."},
+        ]
+    ]
+
+
+async def test_ask_does_not_show_the_agent_the_question_twice(
+    client, fake_session, stub_the_agent
+):
+    """History is read before the new turn is written, not after."""
+    fake_session._store("assistant", "Hi Mattia, how can I help you?")
+
+    await client.post(
+        "/ask",
+        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        json={"role": "user", "text": "Can I take ibuprofen?"},
+    )
+
+    asked = [
+        turn for turn in stub_the_agent[0] if turn["content"] == "Can I take ibuprofen?"
+    ]
+
+    # Once, as the last turn -- not again in the history behind it.
+    assert len(asked) == 1
+    assert stub_the_agent[0][-1] == asked[0]
+
+
+async def test_ask_sends_the_whole_thread(client, fake_session, stub_the_agent):
+    """Every stored turn goes to the agent, oldest first, then the question.
+
+    Nothing is dropped and nothing is windowed. Worth pinning as a choice
+    rather than an accident: the transcript is re-sent on every model turn of
+    a run, so a long thread costs more with every message in it.
+    """
+    for n in range(30):
+        fake_session._store("user", f"turn {n}")
+
+    await client.post(
+        "/ask",
+        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        json={"role": "user", "text": "and now?"},
+    )
+
+    turns = stub_the_agent[0]
+
+    assert len(turns) == 31
+    assert turns[0]["content"] == "turn 0"
+    assert turns[-1]["content"] == "and now?"
+
+
+async def test_ask_on_a_missing_or_deleted_conversation_is_404(
+    client, fake_session, stub_the_agent
+):
+    fake_session.matched = False
+
+    response = await client.post(
+        "/ask",
+        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        json={"role": "user", "text": "hello"},
+    )
+
+    assert response.status_code == 404
+    # Nothing written, and the model never called.
+    assert not fake_session.committed
+    assert stub_the_agent == []
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param({"role": "user"}, id="missing-text"),
+        pytest.param({"role": "user", "text": " "}, id="blank-text"),
+        pytest.param({"role": "system", "text": "hi"}, id="unknown-role"),
+    ],
+)
+async def test_ask_rejects_invalid_payloads(
+    client, fake_session, stub_the_agent, payload
+):
+    # It reuses NewMessage, so it inherits that schema's validation rather
+    # than restating it.
+    response = await client.post(
+        "/ask",
+        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
 async def test_health_db_reports_the_server_version(client, fake_session):
     response = await client.get("/health/db")
 
@@ -221,104 +403,36 @@ async def test_unknown_route_is_a_404(client):
     assert response.status_code == 404
 
 
-async def test_add_message_returns_the_stored_message(client, fake_session):
-    conversation_id = uuid.uuid4()
+async def test_ask_with_an_id_does_not_start_another_conversation(
+    client, fake_session, stub_the_agent
+):
+    """The fork the whole endpoint turns on.
+
+    A conversationId means append to that thread. Creating one anyway would
+    strand the thread the caller named and answer into a new one, which the
+    client would only notice by the id changing under it.
+    """
+    fake_session._store("assistant", "Hi Mattia, how can I help you?")
 
     response = await client.post(
-        f"/conversations/{conversation_id}/messages",
-        json={"role": "user", "text": "What is my last episode?"},
+        "/ask",
+        params={"userId": USER_ID, "conversationId": uuid.uuid4()},
+        json={"role": "user", "text": "And my medications?"},
     )
 
     assert response.status_code == 201
-    body = response.json()
-    assert body["role"] == "user"
-    assert body["text"] == "What is my last episode?"
-    # Minted by the database, so the caller learns them from the response.
-    assert uuid.UUID(body["message_id"])
-    assert body["timestamp"]
-    assert fake_session.committed
+    assert not any(
+        statement.startswith("INSERT INTO conversations")
+        for statement in fake_session.statements
+    )
+    # The question and the answer, without a greeting in front of them.
+    assert len(response.json()["messages"]) == 2
 
 
-async def test_add_message_to_a_missing_or_deleted_conversation_is_404(
+async def test_ask_without_an_id_seeds_the_greeting_then_the_first_message(
     client, fake_session
 ):
-    # Nothing returned means the INSERT ... SELECT selected nothing: unknown
-    # id, or soft-deleted. Either way the row was never written.
-    fake_session.matched = False
-
-    response = await client.post(
-        f"/conversations/{uuid.uuid4()}/messages",
-        json={"role": "user", "text": "hello"},
-    )
-
-    assert response.status_code == 404
-    assert not fake_session.committed
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        pytest.param({"role": "system", "text": "hi"}, id="unknown-role"),
-        pytest.param({"role": "user", "text": " "}, id="blank-text"),
-        pytest.param({"role": "user"}, id="missing-text"),
-        pytest.param({"text": "hi"}, id="missing-role"),
-    ],
-)
-async def test_add_message_rejects_invalid_payloads(client, fake_session, payload):
-    response = await client.post(
-        f"/conversations/{uuid.uuid4()}/messages", json=payload
-    )
-
-    assert response.status_code == 422
-
-
-async def test_add_message_ignores_a_client_supplied_message_id(client, fake_session):
-    # The schema has no message_id field, so one in the body is dropped rather
-    # than trusted -- pinning that a caller cannot choose its own id.
-    forged = str(uuid.uuid4())
-
-    response = await client.post(
-        f"/conversations/{uuid.uuid4()}/messages",
-        json={"role": "user", "text": "hi", "message_id": forged},
-    )
-
-    assert response.status_code == 201
-    assert response.json()["message_id"] != forged
-
-
-async def test_add_message_is_a_single_statement(client, fake_session):
-    # The point of the design: one INSERT, and no SELECT before it. The
-    # conversation being live is checked inside the statement that writes, so
-    # there is no window between deciding to write and writing.
-    await client.post(
-        f"/conversations/{uuid.uuid4()}/messages",
-        json={"role": "user", "text": "hi"},
-    )
-
-    assert len(fake_session.statements) == 1
-    statement = fake_session.statements[0]
-    assert statement.startswith("WITH m AS (INSERT INTO messages")
-    assert "FROM conversations c" in statement
-    assert "NOT c.deleted" in statement
-
-
-async def test_add_message_stores_no_metadata_of_its_own(client, fake_session):
-    # A user turn carries nothing extra, and the column is NOT NULL: an empty
-    # object, never None, or the insert fails.
-    await client.post(
-        f"/conversations/{uuid.uuid4()}/messages",
-        json={"role": "user", "text": "hi"},
-    )
-
-    assert json.loads(fake_session.parameters[0]["metas"][0]) == {}
-
-
-async def test_start_conversation_seeds_the_greeting_then_the_first_message(
-    client, fake_session
-):
-    response = await client.post(
-        "/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE
-    )
+    response = await client.post("/ask", params={"userId": USER_ID}, json=NEW_MESSAGE)
 
     assert response.status_code == 201
     body = response.json()
@@ -328,9 +442,8 @@ async def test_start_conversation_seeds_the_greeting_then_the_first_message(
     assert greeting["role"] == "assistant"
     assert greeting["text"] == f"Hi {SEEDED_NAME}, how can I help you?"
     assert (first["role"], first["text"]) == ("user", NEW_MESSAGE["text"])
-    # And the assistant's reply to it, with the triage code it assigned.
-    assert (answer["role"], answer["text"]) == ("assistant", CANNED_ANSWER["message"])
-    assert answer["severity"] == "S3"
+    # And the agent's reply to it.
+    assert (answer["role"], answer["text"]) == ("assistant", AGENT_REPLY)
     # Both seeded messages are real messages, not bare role/text pairs.
     assert uuid.UUID(greeting["message_id"]) != uuid.UUID(first["message_id"])
     # Strictly earlier: the rows are written in one transaction, so a
@@ -340,15 +453,33 @@ async def test_start_conversation_seeds_the_greeting_then_the_first_message(
     assert fake_session.committed
 
 
-async def test_the_assistants_severity_is_stored_as_metadata(client, fake_session):
-    # Not flattened into the message: it travels in the metadata column, so a
-    # field added there later cannot collide with a column name.
-    await client.post("/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE)
+async def test_the_assistants_reply_carries_no_metadata(client, fake_session):
+    # The agent answers in text, so there is no triage code to store. The
+    # column is NOT NULL, so what goes in is an empty object, never None.
+    await client.post("/ask", params={"userId": USER_ID}, json=NEW_MESSAGE)
 
-    assert json.loads(fake_session.parameters[2]["metas"][0]) == {
-        "severity": "S3",
-        "confidence": "moderate",
-    }
+    written = [p for p in fake_session.parameters if p and "metas" in p]
+
+    assert json.loads(written[-1]["metas"][0]) == {}
+
+
+async def test_the_first_turn_is_answered_knowing_the_greeting(
+    client, fake_session, stub_the_agent
+):
+    """Both routes tell the agent the same story about what the patient saw.
+
+    The greeting is a turn the patient read, so the opening question is
+    answered in its light -- exactly as a follow-up is. Asserted because the
+    two routes could easily disagree about this and nothing would look wrong.
+    """
+    await client.post("/ask", params={"userId": USER_ID}, json=NEW_MESSAGE)
+
+    assert stub_the_agent == [
+        [
+            {"role": "assistant", "content": f"Hi {SEEDED_NAME}, how can I help you?"},
+            {"role": "user", "content": NEW_MESSAGE["text"]},
+        ]
+    ]
 
 
 async def test_seeded_greeting_ignores_the_caller(client, fake_session):
@@ -359,9 +490,7 @@ async def test_seeded_greeting_ignores_the_caller(client, fake_session):
     user = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 
     previewed = await client.get("/", params={"user": user})
-    created = await client.post(
-        "/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE
-    )
+    created = await client.post("/ask", params={"userId": USER_ID}, json=NEW_MESSAGE)
 
     assert (
         created.json()["messages"][0]["text"]
@@ -372,25 +501,23 @@ async def test_seeded_greeting_ignores_the_caller(client, fake_session):
     )
 
 
-async def test_start_conversation_for_an_unknown_user_is_404(client, fake_session):
+async def test_ask_without_an_id_for_an_unknown_user_is_404(client, fake_session):
     # The user_id FK is what rejects this; unmapped it would surface as a 500.
     fake_session.error = IntegrityError("INSERT", {}, Exception("fk violation"))
 
-    response = await client.post(
-        "/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE
-    )
+    response = await client.post("/ask", params={"userId": USER_ID}, json=NEW_MESSAGE)
 
     assert response.status_code == 404
     assert not fake_session.committed
 
 
-async def test_start_conversation_writes_the_conversation_then_its_messages(
+async def test_ask_without_an_id_writes_the_conversation_then_its_messages(
     client, fake_session
 ):
     # Three statements: the conversation, both seeded messages together, and
     # the assistant's reply. The seed is one statement rather than one per
     # message; the reply is separate because the model had not answered yet.
-    await client.post("/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE)
+    await client.post("/ask", params={"userId": USER_ID}, json=NEW_MESSAGE)
 
     assert len(fake_session.statements) == 3
     assert fake_session.statements[0].startswith("INSERT INTO conversations")
@@ -409,22 +536,18 @@ async def test_start_conversation_writes_the_conversation_then_its_messages(
         pytest.param({"text": "hi"}, id="missing-role"),
     ],
 )
-async def test_start_conversation_rejects_invalid_payloads(
+async def test_ask_without_an_id_rejects_invalid_payloads(
     client, fake_session, payload
 ):
-    response = await client.post(
-        "/conversations", params={"userId": USER_ID}, json=payload
-    )
+    response = await client.post("/ask", params={"userId": USER_ID}, json=payload)
 
     assert response.status_code == 422
 
 
-async def test_start_conversation_requires_the_user_id_query_parameter(
-    client, fake_session
-):
+async def test_ask_requires_the_user_id_query_parameter(client, fake_session):
     # userId is a bare str on the handler, so FastAPI makes it a required
     # query param. Omitting it is a 422 rather than an insert with no owner.
-    response = await client.post("/conversations", json=NEW_MESSAGE)
+    response = await client.post("/ask", json=NEW_MESSAGE)
 
     assert response.status_code == 422
     assert fake_session.statements == []
@@ -433,9 +556,7 @@ async def test_start_conversation_requires_the_user_id_query_parameter(
 async def test_read_conversation_returns_the_whole_history(client, fake_session):
     # What the jsonb array could only give all at once, and what nothing could
     # give at all: the conversation, read back after the fact.
-    created = await client.post(
-        "/conversations", params={"userId": USER_ID}, json=NEW_MESSAGE
-    )
+    created = await client.post("/ask", params={"userId": USER_ID}, json=NEW_MESSAGE)
     conversation_id = created.json()["conversation_id"]
 
     response = await client.get(f"/conversations/{conversation_id}")
@@ -446,12 +567,11 @@ async def test_read_conversation_returns_the_whole_history(client, fake_session)
     assert [m["text"] for m in body["messages"]] == [
         f"Hi {SEEDED_NAME}, how can I help you?",
         NEW_MESSAGE["text"],
-        CANNED_ANSWER["message"],
+        AGENT_REPLY,
     ]
-    # Metadata comes back merged into the message, the shape it had when it
-    # lived in the array -- so the UI reads a stored turn the same way it
-    # reads a fresh one.
-    assert body["messages"][2]["severity"] == "S3"
+    # Metadata still comes back merged into the message, the shape it had when
+    # it lived in the array -- there is simply nothing in it to merge.
+    assert body["messages"][2].keys() == {"role", "text", "message_id", "timestamp"}
 
 
 async def test_read_a_missing_or_deleted_conversation_is_404(client, fake_session):

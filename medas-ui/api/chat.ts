@@ -21,16 +21,19 @@ interface StoredMessage extends ChatMessageProps {
   timestamp: string
 }
 
+// The envelope both POST routes answer with: the conversation, and the turns
+// this request added to it. Named for the shape rather than for one route.
+//
 // The API answers in snake_case; this is mapped to camelCase below so the
 // convention stops at this boundary.
-interface CreatedConversationResponse {
+interface ConversationTurnsResponse {
   conversation_id: string
   messages: StoredMessage[]
 }
 
-interface CreatedConversation {
+interface AskResult {
   conversationId: string
-  messages: StoredMessage[]
+  turns: StoredMessage[]
 }
 
 const post = async <T>(url: string, body: unknown): Promise<T> => {
@@ -52,30 +55,31 @@ const post = async <T>(url: string, body: unknown): Promise<T> => {
   return data
 }
 
-// Starts a conversation. The API seeds the greeting alongside this message,
-// so the reply carries the whole history, not just what was sent.
-const startNewConversation = async (
+// Asks the agent. Without a conversationId the API starts a conversation and
+// seeds the greeting, so the turns that come back are the greeting, the
+// question and the answer; with one they are the question and the answer.
+// Either way they are what this request added, and the caller appends them.
+//
+// A 404 on an id that was supplied means the conversation is unknown or
+// soft-deleted -- never a reason to silently start a new one, which is why
+// the id is omitted rather than guessed at.
+const ask = async (
   message: ChatMessageProps,
-): Promise<CreatedConversation> => {
-  const url = `${API_BASE_URL}/conversations?userId=${encodeURIComponent(USER_ID)}`
+  conversationId?: string,
+): Promise<AskResult> => {
+  const url = new URL(`${API_BASE_URL}/ask`)
+  url.searchParams.set("userId", USER_ID)
+
+  if (conversationId) {
+    url.searchParams.set("conversationId", conversationId)
+  }
 
   // The body is the message itself -- role and text at the top level.
   // Wrapping it in { message } is a 422.
-  const data = await post<CreatedConversationResponse>(url, message)
+  const data = await post<ConversationTurnsResponse>(url.toString(), message)
 
-  return { conversationId: data.conversation_id, messages: data.messages }
+  return { conversationId: data.conversation_id, turns: data.messages }
 }
 
-// Appends to an existing conversation. A 404 here means it is unknown or
-// soft-deleted -- never a reason to silently start a new one.
-const postMessage = async (
-  message: ChatMessageProps,
-  conversationId: string,
-): Promise<StoredMessage> => {
-  const url = `${API_BASE_URL}/conversations/${conversationId}/messages`
-
-  return post<StoredMessage>(url, message)
-}
-
-export { postMessage, startNewConversation }
-export type { CreatedConversation, StoredMessage }
+export { ask }
+export type { AskResult, StoredMessage }

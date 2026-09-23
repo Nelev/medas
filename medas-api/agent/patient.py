@@ -16,7 +16,7 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-__all__ = ["UnknownPatient", "patient_block", "record_id"]
+__all__ = ["UnknownPatient", "patient_block", "record_block", "record_id"]
 
 RECORD_PATH = (
     Path(__file__).resolve().parent.parent / "rag_pipeline" / "medical_history.json"
@@ -56,10 +56,22 @@ async def patient_block(session: AsyncSession, user_id: uuid.UUID | str) -> str:
     if known is None:
         raise UnknownPatient(f"no user {user_id}")
 
-    record = _record()
-
-    if record.get("id") != record_id(known):
+    if _record().get("id") != record_id(known):
         raise UnknownPatient(f"no record for user {known}")
+
+    return record_block()
+
+
+def record_block() -> str:
+    """The <patient> block itself, with no check that it is yours to see.
+
+    Split out of patient_block so a caller that has already established whose
+    record this is -- or that serves one patient and so has nothing to
+    establish -- can build the block without a database round trip. The check
+    stays in patient_block, which is what to reach for when the caller is
+    acting on a user id it was handed.
+    """
+    record = _record()
 
     # Name, date of birth and sex: what the prompt asks for, and no more. The
     # email is in `users` and has no clinical use, so it is not sent.

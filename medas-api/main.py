@@ -1,22 +1,17 @@
 import json
-import os
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from functools import lru_cache
 from typing import Annotated
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
-from openai import AsyncOpenAI
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent.assistant_general_prompt import ASSISTANT_SYSTEM_PROMPT
-from agent.patient import UnknownPatient, patient_block, record_id
-from agent.search import search_record
 from database.database import dispose_engine, get_session, init_engine
+from langchain_agent.agent import answer as ask_agent
 from model import (
     MessageRole,
     append_message,
@@ -26,45 +21,9 @@ from model import (
 )
 from schema import NewMessage
 
+# No model client is built here: the agent reads OPENROUTER_API_KEY from the
+# environment when its graph is built, on the first request that needs it.
 load_dotenv()
-
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
-
-@lru_cache
-def get_client() -> AsyncOpenAI:
-    """The model client, built on first use rather than at import.
-
-    The SDK raises when the key is missing, so building it at import time
-    meant importing this module required credentials -- which is why CI could
-    not even collect the tests, let alone run them.
-    """
-    return AsyncOpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=OPENROUTER_API_KEY,
-        # Without this the SDK waits indefinitely: a hung upstream would hold
-        # the request, its database session and its worker until the client
-        # gave up. Generous, because a round that searches the record and
-        # then answers is not fast.
-        timeout=MODEL_TIMEOUT_SECONDS,
-    )
-
-
-# A model call that has not answered in this long is not going to. The SDK
-# retries twice by default, so the worst case is roughly three times this.
-MODEL_TIMEOUT_SECONDS = 45.0
-
-# The codes the prompt defines. Anything else is not a triage decision this
-# service made, whatever the model returned.
-SEVERITIES = frozenset({"S1", "S2", "S3", "S4", "S5"})
-
-# Shown when the model's reply cannot be read. It says what happened and what
-# to do about it, rather than leaving the patient with an error.
-ASSISTANT_UNAVAILABLE = (
-    "I could not review your record just now, so I cannot tell you how urgent "
-    "this is. Please contact your care team today, and call emergency services "
-    "if you feel very unwell."
-)
 
 
 @asynccontextmanager
@@ -91,178 +50,144 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 @app.get("/")
 def init_user_profile(user: str):
     # Not persisted: this is the preview shown before the user says anything.
-    # The stored copy is seeded by POST /conversations from the same text.
+    # The stored copy is seeded by POST /ask from the same text.
     return {"messages": [{"role": "assistant", "text": greeting_text(user)}]}
 
 
-@app.post("/conversations", status_code=201)
-async def start_conversation(message: NewMessage, userId: str, session: SessionDep):
-    try:
-        conversation_id, messages = await create_conversation(
-            session,
-            userId,
-            "Mattia",
-            message.role,
-            message.text,
-        )
-    except IntegrityError as exc:
-        # The only constraint here is the user_id FK.
-        raise HTTPException(status_code=404, detail="User not found") from exc
+def _as_turns(messages: list[dict], question: str) -> list[dict]:
+    """The stored turns and the new question, as a chat model takes them.
 
-    await session.commit()
-
-    # Who the record belongs to, read from the database rather than assumed.
-    try:
-        patient = await patient_block(session, userId)
-    except UnknownPatient as exc:
-        raise HTTPException(status_code=404, detail="User not found") from exc
-
-    # Flat, because this is the Responses API: name and parameters sit at the
-    # top level. Chat Completions nests the same fields under "function", and
-    # each endpoint rejects the other's shape with a 400.
-    tools = [
-        {
-            "type": "function",
-            "name": "search_record",
-            "description": "Get patient records.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "text": {
-                        "type": "string",
-                        "description": "The message to query for",
-                    },
-                    "patient_id": {
-                        "type": "string",
-                        "description": "The id of the patient to search for",
-                    },
-                },
-                "required": ["text", "patient_id"],
-            },
-        },
+    The wire calls the field `text`; a chat model calls it `content`. Roles
+    are already "user" and "assistant" on both sides. No system turn: the
+    prompt belongs to the agent, and a second copy would be sent twice.
+    """
+    return [
+        *({"role": m["role"], "content": m["text"]} for m in messages),
+        {"role": "user", "content": question},
     ]
 
-    # Named apart from `messages`: that holds the conversation as stored, and
-    # overwriting it here is what left the endpoint returning the model's
-    # payload instead of the record.
-    input_list = [
-        {"role": "system", "content": ASSISTANT_SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                f"<patient>\n{patient}\n</patient>\n"
-                f"<message>\n{message.text}\n</message>"
-            ),
-        },
-    ]
 
-    # Awaited, not called: this is the async client, so the request is real
-    # non-blocking I/O rather than a thread standing still. A thread pool would
-    # also cap concurrency -- asyncio's default executor tops out around 32
-    # workers, on calls that take the better part of ten seconds each.
-    response = await get_client().responses.create(
-        model="openai/gpt-4o-mini",
-        input=input_list,
-        max_output_tokens=1500,
-        # Without this the model sometimes wraps its object in a ```json
-        # fence, which json.loads will not read.
-        text={"format": {"type": "json_object"}},
-        tools=tools,
-    )
+async def _answer_and_store(
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    turns: list[dict],
+) -> dict:
+    """Ask the agent, and store what it answers.
 
-    # The model's own turn goes back in first: a function_call_output is
-    # matched to its call by call_id, so the call it answers has to be there.
-    input_list += response.output
+    Both paths through /ask end here, so the opening turn of a conversation
+    and every later one are answered on the same terms.
 
-    answered_a_call = False
+    The prompt asks for one JSON object, so the reply is read as one: the
+    patient sees `message`, and the triage code travels with the turn as
+    metadata because which code was given, and when, is what an audit asks
+    about later.
+    """
+    reply = await ask_agent(turns)
 
-    for item in response.output:
-        if item.type == "function_call" and item.name == "search_record":
-            arguments = json.loads(item.arguments)
-            query_result = await search_record(
-                arguments.get("text", message.text),
-                record_id(userId),
-            )
-
-            input_list.append(
-                {
-                    "type": "function_call_output",
-                    "call_id": item.call_id,
-                    # A string, not a list: the field carries whatever the tool
-                    # produced, and the API will not serialise it for us.
-                    "output": json.dumps(query_result),
-                }
-            )
-            answered_a_call = True
-
-    # Only when the model actually asked for something. Calling again
-    # unconditionally paid for a second round on every request and re-asked the
-    # question with the first answer already in the input.
-    if answered_a_call:
-        response = await get_client().responses.create(
-            model="openai/gpt-4o-mini",
-            input=input_list,
-            # The same terms as the first round: a reply that is not JSON, or
-            # is cut off mid-object, fails the parse below either way.
-            max_output_tokens=1500,
-            text={"format": {"type": "json_object"}},
-            tools=tools,
-        )
-    # A model that replies in prose, or leaves a field out, is a normal
-    # occurrence rather than an exception -- so a bad reply becomes a visible
-    # fallback rather than a 500 the patient cannot act on.
-    #
-    # AttributeError is in the net as well: on this API there is no
-    # response.choices, and reaching for it would be a 500 rather than a reply
-    # the patient can act on.
     try:
-        answer = json.loads(response.output_text or "")
+        answer = json.loads(reply)
         reply_text = answer["message"]
-        severity = answer.get("severity")
-        confidence = answer.get("confidence", "low")
-    except json.JSONDecodeError, KeyError, TypeError, AttributeError:
-        reply_text = ASSISTANT_UNAVAILABLE
-        severity, confidence = None, "low"
+        extra = {
+            "severity": answer.get("severity"),
+            "confidence": answer.get("confidence"),
+        }
+    except json.JSONDecodeError, KeyError, TypeError:
+        # Prose where an object was asked for. The model does this on its own
+        # judgement -- most often on a red flag, where it drops the format and
+        # writes the warning out directly. That reply is a good answer, so it
+        # is shown as it stands; only the triage code is lost with it.
+        reply_text = reply
+        extra = {}
 
-    # S2 when the severity is missing or not one this service defines. Never a
-    # lower code: a triage answer that could not be read must not imply the
-    # symptom was mild.
-    if severity not in SEVERITIES:
-        severity = "S2"
-
-    # Stored, not merely returned -- otherwise the question survives a reload
-    # and the answer to it does not. The severity travels with the turn
-    # because which triage code was given, and when, is the thing an audit
-    # asks about later.
-    reply = await append_message(
+    return await append_message(
         session,
         conversation_id,
         MessageRole.ASSISTANT,
         reply_text,
-        extra={"severity": severity, "confidence": confidence},
+        extra=extra,
     )
-    await session.commit()
-
-    # The conversation as recorded: the greeting, what was asked, and the
-    # answer. The client renders what the record holds rather than assuming.
-    return {"conversation_id": conversation_id, "messages": [*messages, reply]}
 
 
-# Appends only. An unknown or soft-deleted id is a 404, never an implicit
-# create: that would resurrect deleted threads and let a caller pick its own
-# primary key. A client without an id starts one above instead.
-@app.post("/conversations/{conversation_id}/messages", status_code=201)
-async def add_message(
-    conversation_id: uuid.UUID, new_message: NewMessage, session: SessionDep
+@app.post("/ask", status_code=201)
+async def ask(
+    message: NewMessage,
+    userId: str,
+    session: SessionDep,
+    conversationId: uuid.UUID | None = None,
 ):
-    message = await append_message(
-        session, conversation_id, new_message.role, new_message.text
-    )
-    if message is None:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    """Ask the agent. Starts a conversation when there is not one yet.
 
+    One endpoint for every question, because the only difference between the
+    first and the rest is whether a thread exists to hang it on -- and a
+    caller that has just opened the app should not have to know that.
+
+    conversationId is a query parameter rather than a path segment because a
+    path segment cannot be absent, and rather than a body field because the
+    body is a message and this is not part of one.
+
+    Memory comes from the messages table rather than a LangGraph checkpointer.
+    One store of a conversation, not two: a checkpointer would keep its own
+    copy of the thread, and the copy the UI renders is this one.
+
+    Note what is not checked: that conversationId belongs to userId. Any
+    caller that knows an id can have that thread answered.
+    """
+    if conversationId is None:
+        try:
+            conversation_id, written = await create_conversation(
+                session,
+                userId,
+                "Mattia",
+                message.role,
+                message.text,
+            )
+        except IntegrityError as exc:
+            # The only constraint here is the user_id FK.
+            raise HTTPException(status_code=404, detail="User not found") from exc
+
+        await session.commit()
+
+        # `written` is the greeting and the question, in that order, so
+        # written[:-1] is everything the patient has seen before the question
+        # being answered.
+        turns = _as_turns(written[:-1], message.text)
+    else:
+        conversation_id = conversationId
+
+        # Read before the new turn is written, so the model is not shown the
+        # question it is being asked twice.
+        #
+        # Empty means the conversation is unknown or soft-deleted: a live one
+        # always holds at least the greeting it was seeded with. Same signal
+        # GET /conversations/{id} relies on.
+        stored_messages = await list_messages(session, conversation_id)
+
+        if not stored_messages:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+
+        turns = _as_turns(stored_messages, message.text)
+
+        sent = await append_message(
+            session, conversation_id, message.role, message.text
+        )
+
+        if sent is None:
+            # Live a moment ago and not now. The write is the only authority.
+            raise HTTPException(status_code=404, detail="Conversation not found")
+
+        # Committed before the model call, so a run of several round trips
+        # does not hold a write transaction open for its duration.
+        await session.commit()
+
+        written = [sent]
+
+    reply = await _answer_and_store(session, conversation_id, turns)
     await session.commit()
-    return message
+
+    # Everything this request added to the thread: on a new conversation the
+    # greeting, the question and the answer; on a later one the question and
+    # the answer. The client appends them to what it already has.
+    return {"conversation_id": conversation_id, "messages": [*written, reply]}
 
 
 @app.get("/conversations/{conversation_id}")

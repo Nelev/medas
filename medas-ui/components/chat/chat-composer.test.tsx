@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { postMessage, startNewConversation } from "@/api/chat"
+import { ask } from "@/api/chat"
 import { ChatComposer } from "@/components/chat/chat-composer"
 import { useChatStore } from "@/store/store"
 import {
@@ -11,18 +11,17 @@ import {
   firstMessage,
   greeting,
   storedMessage,
+  storedReply,
 } from "@/test/fixtures"
 
 // The API client is mocked here, not fetch: its own contract with the server
-// is covered in api/chat.test.ts, and what matters at this level is which of
-// the two calls the composer chooses and what it does with the answer.
+// is covered in api/chat.test.ts, and what matters at this level is what the
+// composer passes it and what it does with the answer.
 vi.mock("@/api/chat", () => ({
-  startNewConversation: vi.fn(),
-  postMessage: vi.fn(),
+  ask: vi.fn(),
 }))
 
-const mockedStart = vi.mocked(startNewConversation)
-const mockedPost = vi.mocked(postMessage)
+const mockedAsk = vi.mocked(ask)
 
 const send = async (text: string) => {
   const user = userEvent.setup()
@@ -37,29 +36,28 @@ const send = async (text: string) => {
 
 describe("ChatComposer", () => {
   beforeEach(() => {
-    mockedStart.mockReset()
-    mockedPost.mockReset()
-    mockedStart.mockResolvedValue({
+    mockedAsk.mockReset()
+    // What a follow-up answers with: the message and the agent's reply.
+    mockedAsk.mockResolvedValue({
       conversationId: CONVERSATION_ID,
-      messages: createdConversation.messages,
+      turns: [storedMessage, storedReply],
     })
-    mockedPost.mockResolvedValue(storedMessage)
   })
 
   describe("with no conversation yet", () => {
-    it("creates one rather than appending", async () => {
+    it("sends without an id, so the API starts one", async () => {
       render(<ChatComposer />)
 
       await send("Do I have any allergies?")
 
-      await waitFor(() => expect(mockedStart).toHaveBeenCalledTimes(1))
-      expect(mockedStart).toHaveBeenCalledWith({
-        role: "user",
-        text: "Do I have any allergies?",
-      })
-      // Appending to a conversation that does not exist is a 404, so this
-      // must not fire on the first message.
-      expect(mockedPost).not.toHaveBeenCalled()
+      await waitFor(() => expect(mockedAsk).toHaveBeenCalledTimes(1))
+      // An empty id, which the client omits from the query -- naming a
+      // conversation that does not exist would be a 404 rather than a new
+      // thread.
+      expect(mockedAsk).toHaveBeenCalledWith(
+        { role: "user", text: "Do I have any allergies?" },
+        "",
+      )
     })
 
     it("keeps the id so the next message can append", async () => {
@@ -72,19 +70,21 @@ describe("ChatComposer", () => {
       )
     })
 
-    it("replaces the list with everything the server seeded", async () => {
-      // Seeded with a leftover message so replace and append are actually
-      // distinguishable. With an empty store the two are identical, and the
-      // assertion would hold either way -- which is no assertion at all.
-      useChatStore.setState({ messages: [{ role: "user", text: "stale" }] })
+    it("shows the greeting the server seeded, once", async () => {
+      // The store is empty before the first send, so appending the turns the
+      // API returns is the same as replacing -- and the greeting the server
+      // seeded is the only one rendered. The preview greeting lives in
+      // ChatMessages' initialMessages, which it stops using the moment the
+      // store has anything in it.
+      mockedAsk.mockResolvedValue({
+        conversationId: CONVERSATION_ID,
+        turns: createdConversation.messages,
+      })
 
       render(<ChatComposer />)
 
       await send("hello")
 
-      // Both messages, greeting first, and nothing else: the API seeds the
-      // greeting alongside the user's own, so its reply is the whole history.
-      // Appending would leave the stale entry and show the greeting twice.
       await waitFor(() =>
         expect(useChatStore.getState().messages).toEqual([
           greeting,
@@ -107,17 +107,15 @@ describe("ChatComposer", () => {
 
       await send("And my medications?")
 
-      await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1))
-      expect(mockedPost).toHaveBeenCalledWith(
+      await waitFor(() => expect(mockedAsk).toHaveBeenCalledTimes(1))
+      // The id it holds, so the API appends rather than starting a thread.
+      expect(mockedAsk).toHaveBeenCalledWith(
         { role: "user", text: "And my medications?" },
         CONVERSATION_ID,
       )
-      // A second create would strand the first conversation and start a new
-      // one behind the user's back.
-      expect(mockedStart).not.toHaveBeenCalled()
     })
 
-    it("keeps the history and puts the new message last", async () => {
+    it("keeps the history and puts the new turns last, in order", async () => {
       render(<ChatComposer />)
 
       await send("And my medications?")
@@ -126,7 +124,9 @@ describe("ChatComposer", () => {
         expect(useChatStore.getState().messages).toEqual([
           greeting,
           firstMessage,
+          // The question, then the answer to it -- never the other way round.
           storedMessage,
+          storedReply,
         ]),
       )
     })
@@ -139,8 +139,7 @@ describe("ChatComposer", () => {
       render(<ChatComposer />)
       await user.click(screen.getByRole("button", { name: "Send message" }))
 
-      expect(mockedStart).not.toHaveBeenCalled()
-      expect(mockedPost).not.toHaveBeenCalled()
+      expect(mockedAsk).not.toHaveBeenCalled()
       expect(useChatStore.getState().messages).toEqual([])
     })
 
@@ -149,8 +148,7 @@ describe("ChatComposer", () => {
 
       await send("   ")
 
-      expect(mockedStart).not.toHaveBeenCalled()
-      expect(mockedPost).not.toHaveBeenCalled()
+      expect(mockedAsk).not.toHaveBeenCalled()
     })
 
     it("trims what it does send", async () => {
@@ -159,10 +157,10 @@ describe("ChatComposer", () => {
       await send("  Do I have any allergies?  ")
 
       await waitFor(() =>
-        expect(mockedStart).toHaveBeenCalledWith({
-          role: "user",
-          text: "Do I have any allergies?",
-        }),
+        expect(mockedAsk).toHaveBeenCalledWith(
+          { role: "user", text: "Do I have any allergies?" },
+          "",
+        ),
       )
     })
 
@@ -181,19 +179,19 @@ describe("ChatComposer", () => {
 
   describe("when the send fails", () => {
     it("leaves the history untouched", async () => {
-      mockedStart.mockRejectedValue(new Error("Failed to fetch"))
+      mockedAsk.mockRejectedValue(new Error("Failed to fetch"))
 
       render(<ChatComposer />)
       await send("hello")
 
-      await waitFor(() => expect(mockedStart).toHaveBeenCalled())
+      await waitFor(() => expect(mockedAsk).toHaveBeenCalled())
       // Nothing was stored, so nothing may appear in the list.
       expect(useChatStore.getState().messages).toEqual([])
       expect(useChatStore.getState().conversationId).toBe("")
     })
 
     it("tells the user, quoting what went wrong", async () => {
-      mockedStart.mockRejectedValue(new Error("Failed to fetch"))
+      mockedAsk.mockRejectedValue(new Error("Failed to fetch"))
 
       render(<ChatComposer />)
       await send("hello")
@@ -208,7 +206,7 @@ describe("ChatComposer", () => {
       // Pinning the trade-off, not endorsing it: the field is cleared
       // optimistically on submit and stays cleared on failure, so retrying
       // means retyping. Flip this test if the draft is ever restored.
-      mockedStart.mockRejectedValue(new Error("Failed to fetch"))
+      mockedAsk.mockRejectedValue(new Error("Failed to fetch"))
 
       render(<ChatComposer />)
       await send("hello")
@@ -218,15 +216,15 @@ describe("ChatComposer", () => {
     })
 
     it("clears the warning once a send succeeds", async () => {
-      mockedStart.mockRejectedValueOnce(new Error("Failed to fetch"))
+      mockedAsk.mockRejectedValueOnce(new Error("Failed to fetch"))
 
       render(<ChatComposer />)
       await send("hello")
       await screen.findByRole("alert")
 
-      mockedStart.mockResolvedValue({
+      mockedAsk.mockResolvedValue({
         conversationId: CONVERSATION_ID,
-        messages: createdConversation.messages,
+        turns: createdConversation.messages,
       })
       await send("again")
 

@@ -26,9 +26,28 @@ const storedMessage = {
   timestamp: "2026-09-18T09:48:02.004000+00:00",
 }
 
+// The agent's answer to storedMessage. It carries a severity: both POST
+// routes run the triage agent and store the code it assigned, and the badge
+// in chat-message.tsx renders from it.
+const storedReply = {
+  role: "assistant" as const,
+  text: "Your record lists a severe NSAID allergy.",
+  message_id: "c47a2e91-6b38-4d5f-9e10-8a2c7f4b3d65",
+  timestamp: "2026-09-18T09:48:09.512000+00:00",
+  // as const, or this widens to string and stops matching Severity.
+  severity: "S3" as const,
+  confidence: "moderate",
+}
+
 const createdConversation = {
   conversation_id: CONVERSATION_ID,
   messages: [greeting, firstMessage],
+}
+
+// What /ask answers with: the turn as stored, and the reply to it.
+const askedTurns = {
+  conversation_id: CONVERSATION_ID,
+  messages: [storedMessage, storedReply],
 }
 
 // A fetch Response is only ever consumed here through ok/status/json(), so a
@@ -48,7 +67,9 @@ export {
   greeting,
   firstMessage,
   storedMessage,
+  storedReply,
   createdConversation,
+  askedTurns,
   jsonResponse,
   asChatMessage,
 }
