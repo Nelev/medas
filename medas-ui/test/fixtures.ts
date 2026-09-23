@@ -19,6 +19,10 @@ const firstMessage = {
   timestamp: "2026-09-18T09:47:11.124000+00:00",
 }
 
+// firstMessage as the composer holds it before the API has stored it: no id
+// or timestamp yet.
+const pendingMessage = { role: firstMessage.role, text: firstMessage.text }
+
 const storedMessage = {
   role: "user" as const,
   text: "And my medications?",
@@ -66,6 +70,7 @@ export {
   CONVERSATION_ID,
   greeting,
   firstMessage,
+  pendingMessage,
   storedMessage,
   storedReply,
   createdConversation,

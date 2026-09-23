@@ -8,7 +8,12 @@ import { useChatStore } from "@/store/store"
 beforeEach(() => {
   // The zustand store is a module singleton, so state survives between tests
   // and whichever ran first would silently decide the result of the next.
-  useChatStore.setState({ conversationId: "", messages: [] })
+  useChatStore.setState({
+    conversationId: "",
+    messages: [],
+    pending: null,
+    error: "",
+  })
 })
 
 afterEach(() => {

@@ -9,10 +9,10 @@ import { useChatStore } from "@/store/store"
 
 export function ChatComposer() {
   const conversationId = useChatStore((s) => s.conversationId)
-  const messages = useChatStore((s) => s.messages)
+  const pending = useChatStore((s) => s.pending)
   const error = useChatStore((s) => s.error)
-  const setConversationId = useChatStore((s) => s.setConversationId)
-  const setMessages = useChatStore((s) => s.setMessages)
+  const receiveTurns = useChatStore((s) => s.receiveTurns)
+  const setPending = useChatStore((s) => s.setPending)
   const setError = useChatStore((s) => s.setError)
 
   const handleSubmit = async (event: SyntheticEvent<HTMLFormElement>) => {
@@ -23,25 +23,32 @@ export function ChatComposer() {
     const form = event.currentTarget
     const text = String(new FormData(form).get("message") ?? "").trim()
 
-    if (!text) return
+    // One message in flight at a time: there is a single pending slot, and a
+    // second send would also race the first for the conversation id.
+    if (!text || pending) return
+
+    const message = { role: "user" as const, text }
 
     form.reset()
     // Clear any previous failure: it belonged to the message before this one.
     setError("")
+    // Shown straight away, so the send is visibly acknowledged while the agent
+    // works; the stored copy that comes back takes its place.
+    setPending(message)
 
     try {
       // One call whether or not a conversation exists: without an id the
       // API starts one and the greeting comes back among the turns. The
       // store is empty until the first send, so appending then is the same
       // as replacing -- the greeting does not end up rendered twice.
-      const result = await ask({ role: "user", text }, conversationId)
+      const result = await ask(message, conversationId)
 
-      setConversationId(result.conversationId)
-      setMessages([...messages, ...result.turns])
+      receiveTurns(result.conversationId, result.turns)
     } catch (cause) {
-      // The message was never stored, so nothing is added to the list -- the
-      // banner below is the only trace, and without it the send looks like it
-      // silently worked.
+      // The message was never stored, so it is taken back out of the list --
+      // the banner below is the only trace, and without it the message would
+      // just vanish.
+      setPending(null)
       setError(
         cause instanceof Error ? cause.message : "Could not send that message.",
       )
@@ -83,6 +90,7 @@ export function ChatComposer() {
           type="submit"
           size="icon"
           aria-label="Send message"
+          disabled={pending !== null}
           className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-primary/30 size-9 shrink-0 rounded-full shadow-md"
         >
           <SendHorizontal className="size-4" aria-hidden />
