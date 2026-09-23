@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agent.patient import record_id
 from auth import CurrentUser, get_auth_settings
 from database.database import dispose_engine, get_session, init_engine
 from langchain_agent.agent import answer as ask_agent
@@ -90,7 +91,9 @@ async def _answer_and_store(
     metadata because which code was given, and when, is what an audit asks
     about later.
     """
-    reply = await ask_agent(turns)
+    # The record searched is the signed-in user's, by the pat_{users.id}
+    # convention agent/patient.py owns.
+    reply = await ask_agent(turns, record_id=record_id(user_id))
 
     try:
         answer = json.loads(reply)
