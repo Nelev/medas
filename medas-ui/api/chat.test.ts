@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { auth } from "@clerk/nextjs/server"
+
 import { ask } from "@/api/chat"
 import {
   askedTurns,
@@ -10,6 +12,18 @@ import {
   storedReply,
   USER_ID,
 } from "@/test/fixtures"
+
+// The session is Clerk's to read, so it is mocked; each test starts signed in.
+vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }))
+
+const signInAs = (userId: string | null) =>
+  vi
+    .mocked(auth)
+    .mockResolvedValue({ userId } as Awaited<ReturnType<typeof auth>>)
+
+beforeEach(() => {
+  signInAs("user_test")
+})
 
 // globalThis.fetch is stubbed rather than the module mocked: the URL building
 // and the response mapping are the things under test, and mocking the module
@@ -96,6 +110,16 @@ describe("ask", () => {
     await expect(
       ask({ role: "user", text: "x" }, CONVERSATION_ID),
     ).rejects.toThrow("404")
+  })
+
+  it("refuses to ask without a session, before calling the API", async () => {
+    signInAs(null)
+    const fetchMock = stubFetch(jsonResponse(askedTurns, 201))
+
+    await expect(
+      ask({ role: "user", text: "x" }, CONVERSATION_ID),
+    ).rejects.toThrow("Not signed in")
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it("propagates a network failure instead of resolving undefined", async () => {
