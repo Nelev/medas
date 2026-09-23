@@ -13,14 +13,16 @@ Two packages, deployed and developed separately:
 
 Every request to medas-api is made by the Next server. The browser only ever talks to its own origin:
 
-| Step          | Who calls                              | Call                                                                     |
-| ------------- | -------------------------------------- | ------------------------------------------------------------------------ |
-| Page load     | The Next server, in a Server Component | `GET /?user=…` → the greeting, not persisted                             |
-| Every message | The Next server, in a Server Action    | `POST /ask?userId=…[&conversationId=…]` → stores the turn and answers it |
+| Step          | Who calls                              | Call                                                            |
+| ------------- | -------------------------------------- | --------------------------------------------------------------- |
+| Page load     | The Next server, in a Server Component | `GET /?user=…` → the greeting, not persisted                    |
+| Every message | The Next server, in a Server Action    | `POST /ask[?conversationId=…]` → stores the turn and answers it |
 
 That is what keeps the API's origin out of the browser bundle, removes any need for CORS, and lets one build run in any environment.
 
 Both steps need a signed-in user. [Clerk](https://clerk.com) handles the session: signed out, [`proxy.ts`](medas-ui/proxy.ts) redirects everything but `/sign-in` and `/sign-up` to the sign-in page, and the page and the Server Action each check the session again, since a Server Action is a POST endpoint anyone can call.
+
+Every call to medas-api carries the user's Clerk session token as `Authorization: Bearer …`, and the API takes who is asking from that token alone — never from the request. [`auth/session.py`](medas-api/auth/session.py) verifies it (signature, expiry, and that it was issued for this site) and resolves it to a `users` row: by `users.clerk_user_id` once linked, and on the first sign-in by matching the account's **verified** primary email to an unclaimed row. An account that matches no row is refused with `403 No record for this account` rather than given a new one — a user here is someone with a medical record. Every conversation read and write is scoped to that user in the same SQL statement, so someone else's conversation is a `404`, exactly like one that does not exist. Only `/health/db` is public.
 
 One endpoint answers every message. `conversationId` is optional: without it the API starts a conversation and seeds the greeting, with it the message is appended to that thread. A caller that has just opened the app does not have to know which case it is in, so the composer has no branch — it passes whatever id it holds, which is empty on the first send. The id comes back in the response and lives in a client-side store.
 
@@ -54,7 +56,9 @@ The DSN is composed from the individual `DATABASE_*` variables via SQLAlchemy's 
 
 ### Seed the placeholder user
 
-**Required, and easy to miss.** The UI sends a hardcoded `USER_ID` (see [`medas-ui/api/chat.ts`](medas-ui/api/chat.ts)), and `conversations.user_id` is a foreign key — so without a matching row, the first message of every conversation comes back `404 User not found`.
+**Required, and easy to miss.** Signing up with Clerk does not create a user: the first sign-in links your Clerk account to the `users` row with the same verified email, and with no such row every request is `403 No record for this account`. The one medical record belongs to this user, so this is also the account that can chat about it.
+
+The seed uses `pat_7f3c9a21+clerk_test@example.com`. In a Clerk development instance any `+clerk_test` address is a test address: no email is sent, and the verification code is always `424242`. Sign up with that address and code, and the account links on your first request. To use a real address instead, put it in the `INSERT` — it has to be one you can verify.
 
 There is no seed script yet. Save this as `medas-api/seed.py` and run `uv run python seed.py` from `medas-api`:
 
@@ -67,7 +71,7 @@ from database.database import init_engine
 
 SQL = """
 INSERT INTO users (id, email)
-VALUES ('7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0', 'pat_7f3c9a21@example.com')
+VALUES ('7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0', 'pat_7f3c9a21+clerk_test@example.com')
 ON CONFLICT DO NOTHING
 """
 
@@ -80,6 +84,13 @@ async def seed() -> None:
 
 
 asyncio.run(seed())
+```
+
+Already seeded with the old `pat_7f3c9a21@example.com`? `ON CONFLICT DO NOTHING` leaves it as it was, so update it once:
+
+```sql
+UPDATE users SET email = 'pat_7f3c9a21+clerk_test@example.com'
+WHERE id = '7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0';
 ```
 
 That `INSERT` works just as well through `psql` — note the Windows installer does not put the client on your `PATH`, which is why the Python route is given first.
@@ -97,13 +108,15 @@ yarn install
 
 ## Environment
 
-| Variable                                                | Read by                                            | Default                 | If it is wrong                           |
-| ------------------------------------------------------- | -------------------------------------------------- | ----------------------- | ---------------------------------------- |
-| `API_BASE_URL`                                          | The Next **server** → `api/init.ts`, `api/chat.ts` | `http://localhost:8000` | The page fails to render, and sends fail |
-| `OPENROUTER_API_KEY`                                    | medas-api — embeddings and the model calls         | none                    | Answering fails; the API still starts    |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | medas-ui — the Clerk session                       | none                    | Sign-in does not load                    |
+| Variable                                                | Read by                                                                       | Default                     | If it is wrong                           |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------- | ---------------------------------------- |
+| `API_BASE_URL`                                          | The Next **server** → `api/init.ts`, `api/chat.ts`                            | `http://localhost:8000`     | The page fails to render, and sends fail |
+| `OPENROUTER_API_KEY`                                    | medas-api — embeddings and the model calls                                    | none                        | Answering fails; the API still starts    |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | medas-ui — the Clerk session                                                  | none                        | Sign-in does not load                    |
+| `CLERK_SECRET_KEY`                                      | medas-api — verifying session tokens, and the email lookup on a first sign-in | none                        | The API refuses to start                 |
+| `CLERK_AUTHORIZED_PARTIES`                              | medas-api — the origins a token may be issued for, as a JSON list             | `["http://localhost:3000"]` | Every request is `401`                   |
 
-The Clerk keys go in `medas-ui/.env.local`, and nobody needs to copy them by hand: `yarn dlx clerk@latest init` writes development keys there, for an unclaimed app when you are signed out of Clerk. `yarn dlx clerk@latest auth login` claims it later. The build does not need them, so CI runs without them.
+The Clerk keys go in `medas-ui/.env.local`, and nobody needs to copy them by hand: `yarn dlx clerk@latest init` writes development keys there, for an unclaimed app when you are signed out of Clerk. `yarn dlx clerk@latest auth login` claims it later. The build does not need them, so CI runs without them. medas-api needs the same `CLERK_SECRET_KEY` in `medas-api/.env`; its tests use a placeholder and generate their own signing key, so its CI does not need it either.
 
 `API_BASE_URL` has no `NEXT_PUBLIC_` counterpart on purpose. A `NEXT_PUBLIC_` value is inlined into the bundle at build time, so a built artefact would carry whatever URL the build machine had and the browser would call the API cross-origin. Read on the server at request time instead, it can be changed per environment without rebuilding.
 
@@ -133,12 +146,12 @@ Both suites are unit-only by design — no database, no API, no model, no browse
 
 ## API surface
 
-| Method | Path                                         | Request        | Response                                                         |
-| ------ | -------------------------------------------- | -------------- | ---------------------------------------------------------------- |
-| `GET`  | `/?user=<id>`                                | —              | `{messages: [{role, text}]}` — the greeting, not persisted       |
-| `POST` | `/ask?userId=<uuid>[&conversationId=<uuid>]` | `{role, text}` | `201 {conversation_id, messages}` — the turns this request added |
-| `GET`  | `/conversations/{id}`                        | —              | `{conversation_id, messages}` — the whole history, oldest first  |
-| `GET`  | `/health/db`                                 | —              | `{status, server_version}`                                       |
+| Method | Path                           | Request        | Response                                                         |
+| ------ | ------------------------------ | -------------- | ---------------------------------------------------------------- |
+| `GET`  | `/?user=<name>`                | —              | `{messages: [{role, text}]}` — the greeting, not persisted       |
+| `POST` | `/ask[?conversationId=<uuid>]` | `{role, text}` | `201 {conversation_id, messages}` — the turns this request added |
+| `GET`  | `/conversations/{id}`          | —              | `{conversation_id, messages}` — the whole history, oldest first  |
+| `GET`  | `/health/db`                   | —              | `{status, server_version}`                                       |
 
 `POST /ask` returns **what it added**, not the whole thread: three turns when it started the conversation (the greeting, the question, the answer) and two when it appended (the question and the answer). Either way the client appends them to what it already has.
 
@@ -198,13 +211,15 @@ The query side is [`agent/search.py`](medas-api/agent/search.py) — one functio
 
 ## Testing
 
-79 tests in medas-api, 30 in medas-ui.
+108 tests in medas-api, 31 in medas-ui.
 
 The agent is stubbed at one seam. `main.ask_agent` is what every test patches, so the model, the tool, the prompt and the vector store all stay out of the suite — otherwise it would be slow, billable, non-deterministic, and impossible in CI where none of them exist. The fake records the turns it was given, which is how the history tests assert on what the agent was actually told.
 
+Auth is split the same way. Route tests override `current_user`, so they run as a fixed user without Clerk. [`tests/test_auth.py`](medas-api/tests/test_auth.py) covers the dependency itself with real JWTs, signed by an RSA key generated for the run and verified by Clerk's SDK through its networkless `jwt_key` path: expired, not yet valid, another key, another site's `azp`, machine tokens, the email linking and its refusals. Nothing reaches Clerk.
+
 On the frontend:
 
-- [`medas-ui/api/chat.test.ts`](medas-ui/api/chat.test.ts) stubs `globalThis.fetch` rather than mocking the module, so URL building and response mapping actually run — every bug this file has had lived in exactly those two places. The Clerk session is mocked, and one test covers `ask` refusing a signed-out caller before it reaches the API.
+- [`medas-ui/api/chat.test.ts`](medas-ui/api/chat.test.ts) stubs `globalThis.fetch` rather than mocking the module, so URL building and response mapping actually run — every bug this file has had lived in exactly those two places. The Clerk session is mocked: the token goes out as a bearer header and never as a URL parameter, and `ask` refuses a signed-out caller before it reaches the API.
 - [`medas-ui/components/chat/chat-composer.test.tsx`](medas-ui/components/chat/chat-composer.test.tsx) mocks the API client instead, and covers what the composer sends, what it does with the answer, and what it shows when a send fails. An `ask` held open by the test covers the wait in between: the message shown before the reply, handed over to its stored copy once, and no second send until then.
 - [`medas-ui/components/chat/chat-messages.test.tsx`](medas-ui/components/chat/chat-messages.test.tsx) covers the list around that wait — the typing indicator up only while a message is pending, the greeting kept in view, and a scroll to the bottom when it grows. jsdom has no layout, so `scrollIntoView` and `matchMedia` are stubbed and the test asserts the call, not the scroll.
 
@@ -225,7 +240,7 @@ The build needs no API. `/` renders per request, so nothing is fetched while bui
 
 ## Troubleshooting
 
-**The first message returns 404.** No `users` row matches the hardcoded `USER_ID` — see Seed the placeholder user.
+**Every request is 403 `No record for this account`.** Your Clerk account's verified email matches no `users` row — see Seed the placeholder user. **Every request is 401.** The token did not verify: check `CLERK_SECRET_KEY` in `medas-api/.env` is the same key as the UI's, and that the UI's origin is in `CLERK_AUTHORIZED_PARTIES`.
 
 **Sending shows a red banner.** The banner quotes the API's own error. `Failed to fetch` means the Next server could not reach medas-api — check `API_BASE_URL` and that the API is running. `404 User not found` means the seed step above was skipped.
 
@@ -251,7 +266,7 @@ Working end to end: the chat UI, one endpoint that starts a conversation or cont
 
 Safety and correctness first, because these are the ones that matter if this ever sees a real record.
 
-- **medas-api has no auth, and no ownership check.** The UI requires a Clerk login, but medas-api does not check it: the user is still a hardcoded constant rather than the signed-in one, `userId` is a query parameter on a public endpoint, and `/ask` never checks that `conversationId` belongs to `userId`. Anyone who can reach medas-api can read or write any patient's conversation by guessing an id. The two identifiers arriving on the same request makes the pair _look_ checked; it is not.
+- **The agent searches one hardcoded record.** Requests are authenticated and conversations are scoped to their owner, but `search_record` is still called with the constant `RECORD_ID` in [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py), not the signed-in user's `pat_{id}`. Today only the one seeded user can get past `403`, so nobody reads a record that is not theirs — but a second user would be answered from the first one's record until the agent is given the caller's.
 - **Nothing bounds the agent's search loop.** `create_agent` defaults its recursion limit to 9,999, and the model will keep rephrasing a query it has already run. Observed: a single request accumulating ~112,000 tokens of passages — against a record that is ~2,400 tokens in total — until it exceeded the model's context window and the patient got nothing. Withdrawing the tool after a budget of searches is the fix that worked; a recursion limit alone stops the run but ends it without an answer.
 - **The agent has no error handling.** `answer()` has no try/except, so a failed model call is a 500 rather than something the patient can act on.
 - **The prompt documents a `<patient>` block that is never sent.** Its Inputs section describes identity and demographics arriving with each question; the route sends only the conversation. The model learns who the patient is from the identity line repeated in each retrieved chunk, which works but is not what the prompt says.
@@ -262,7 +277,6 @@ Then the smaller ones:
 
 - **No history on reload.** `GET /conversations/{id}` exists, but nothing calls it: the UI keeps the history it was given in memory, so a refresh returns to the greeting with the stored conversation orphaned.
 - **The greeting is addressed to a hardcoded `"Mattia"`** in two places — `init.ts` ignores its own `user` argument, and the create path passes a literal — so the name shown has nothing to do with whose record is loaded.
-- **`userId` is typed `str`, not `UUID`**, so a malformed id is a 500 from the driver rather than a 422.
 - **No idempotency.** A double-submitted first message creates two conversations.
 - **A submit before hydration is lost.** The composer uses an `onSubmit` handler rather than a form action, so a submission made before React hydrates navigates to `/?message=…` and the message is dropped. React queues submissions for a `<form action={…}>`; a plain handler cannot.
 - **Dead code left by the move to the agent.** [`agent/patient.py`](medas-api/agent/patient.py) — `patient_block`, `record_block`, `record_id`, `UnknownPatient` — has no callers at all; it held the check that a record belongs to the user asking, which nothing performs now. `NewConversation` in `schema/schema.py` is likewise unreferenced.

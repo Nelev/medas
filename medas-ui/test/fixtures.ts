@@ -2,7 +2,6 @@ import type { ChatMessageProps } from "@/model/ChatMessage"
 
 // The shapes medas-api actually returns. Kept in one place so a change to the
 // API contract is a one-file edit here rather than a hunt through specs.
-const USER_ID = "7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 const CONVERSATION_ID = "ba5aa00a-eaac-440f-826a-886354f9babf"
 
 const greeting = {
@@ -66,7 +65,6 @@ const jsonResponse = (body: unknown, status = 200) =>
 const asChatMessage = (message: ChatMessageProps) => message
 
 export {
-  USER_ID,
   CONVERSATION_ID,
   greeting,
   firstMessage,

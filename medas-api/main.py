@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from auth import CurrentUser, get_auth_settings
 from database.database import dispose_engine, get_session, init_engine
 from langchain_agent.agent import answer as ask_agent
 from model import (
@@ -28,7 +29,10 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    # Fail loudly at boot rather than on the first request.
+    # Fail loudly at boot rather than on the first request: a missing
+    # CLERK_SECRET_KEY stops the app here instead of turning every request
+    # into a 500.
+    get_auth_settings()
     engine = init_engine()
     async with engine.connect() as conn:
         await conn.execute(text("SELECT 1"))
@@ -48,9 +52,12 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 @app.get("/")
-def init_user_profile(user: str):
+def init_user_profile(user: str, _: CurrentUser):
     # Not persisted: this is the preview shown before the user says anything.
     # The stored copy is seeded by POST /ask from the same text.
+    #
+    # `user` is only the name to greet, not who is asking -- that is the
+    # session token. Signed in or nothing, like every other route here.
     return {"messages": [{"role": "assistant", "text": greeting_text(user)}]}
 
 
@@ -70,6 +77,7 @@ def _as_turns(messages: list[dict], question: str) -> list[dict]:
 async def _answer_and_store(
     session: AsyncSession,
     conversation_id: uuid.UUID,
+    user_id: uuid.UUID,
     turns: list[dict],
 ) -> dict:
     """Ask the agent, and store what it answers.
@@ -105,13 +113,14 @@ async def _answer_and_store(
         MessageRole.ASSISTANT,
         reply_text,
         extra=extra,
+        user_id=user_id,
     )
 
 
 @app.post("/ask", status_code=201)
 async def ask(
     message: NewMessage,
-    userId: str,
+    user_id: CurrentUser,
     session: SessionDep,
     conversationId: uuid.UUID | None = None,
 ):
@@ -129,20 +138,22 @@ async def ask(
     One store of a conversation, not two: a checkpointer would keep its own
     copy of the thread, and the copy the UI renders is this one.
 
-    Note what is not checked: that conversationId belongs to userId. Any
-    caller that knows an id can have that thread answered.
+    Who is asking comes from the session token, never from the request, and
+    a conversationId that is not theirs is answered exactly like one that
+    does not exist: 404, so an id cannot be probed for.
     """
     if conversationId is None:
         try:
             conversation_id, written = await create_conversation(
                 session,
-                userId,
+                user_id,
                 "Mattia",
                 message.role,
                 message.text,
             )
         except IntegrityError as exc:
-            # The only constraint here is the user_id FK.
+            # The only constraint here is the user_id FK. current_user has
+            # just found the row, so this is a user deleted since.
             raise HTTPException(status_code=404, detail="User not found") from exc
 
         await session.commit()
@@ -160,7 +171,7 @@ async def ask(
         # Empty means the conversation is unknown or soft-deleted: a live one
         # always holds at least the greeting it was seeded with. Same signal
         # GET /conversations/{id} relies on.
-        stored_messages = await list_messages(session, conversation_id)
+        stored_messages = await list_messages(session, conversation_id, user_id=user_id)
 
         if not stored_messages:
             raise HTTPException(status_code=404, detail="Conversation not found")
@@ -168,7 +179,7 @@ async def ask(
         turns = _as_turns(stored_messages, message.text)
 
         sent = await append_message(
-            session, conversation_id, message.role, message.text
+            session, conversation_id, message.role, message.text, user_id=user_id
         )
 
         if sent is None:
@@ -181,7 +192,7 @@ async def ask(
 
         written = [sent]
 
-    reply = await _answer_and_store(session, conversation_id, turns)
+    reply = await _answer_and_store(session, conversation_id, user_id, turns)
     await session.commit()
 
     # Everything this request added to the thread: on a new conversation the
@@ -191,13 +202,16 @@ async def ask(
 
 
 @app.get("/conversations/{conversation_id}")
-async def read_conversation(conversation_id: uuid.UUID, session: SessionDep):
-    messages = await list_messages(session, conversation_id)
+async def read_conversation(
+    conversation_id: uuid.UUID, user_id: CurrentUser, session: SessionDep
+):
+    messages = await list_messages(session, conversation_id, user_id=user_id)
 
     if not messages:
         # A live conversation always holds at least the greeting it was
-        # seeded with, so nothing back means unknown or soft-deleted -- the
-        # same answer, for the same reason, that appending gives.
+        # seeded with, so nothing back means unknown, soft-deleted or someone
+        # else's -- the same answer, for the same reason, that appending
+        # gives.
         raise HTTPException(status_code=404, detail="Conversation not found")
 
     return {"conversation_id": conversation_id, "messages": messages}
