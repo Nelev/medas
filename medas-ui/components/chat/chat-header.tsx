@@ -1,4 +1,7 @@
+import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs"
 import { Stethoscope } from "lucide-react"
+
+import { Button } from "@/components/ui/button"
 
 interface ChatHeaderProps {
   // The record in view. Shown because a clinical tool that does not say whose
@@ -37,6 +40,24 @@ export function ChatHeader({ patient }: ChatHeaderProps) {
           </span>
         </span>
       ) : null}
+
+      {/* Signed out, the two ways in; signed in, the account menu. Clerk's
+          buttons wrap ours, so they keep the interface's own look. */}
+      <Show when="signed-out">
+        <div className="flex shrink-0 items-center gap-2">
+          <SignInButton>
+            <Button variant="ghost" size="sm">
+              Sign in
+            </Button>
+          </SignInButton>
+          <SignUpButton>
+            <Button size="sm">Sign up</Button>
+          </SignUpButton>
+        </div>
+      </Show>
+      <Show when="signed-in">
+        <UserButton />
+      </Show>
     </header>
   )
 }

@@ -1,5 +1,7 @@
 "use server"
 
+import { auth } from "@clerk/nextjs/server"
+
 import { ChatMessageProps } from "@/model/ChatMessage"
 
 // Server Actions: the composer calls these from the browser, but the fetch
@@ -67,6 +69,15 @@ const ask = async (
   message: ChatMessageProps,
   conversationId?: string,
 ): Promise<AskResult> => {
+  // A Server Action is a POST endpoint anyone can call, not only this app's
+  // composer, so the proxy is not enough on its own: check the session here,
+  // next to the call it guards.
+  const { userId } = await auth()
+
+  if (!userId) {
+    throw new Error("Not signed in")
+  }
+
   const url = new URL(`${API_BASE_URL}/ask`)
   url.searchParams.set("userId", USER_ID)
 

@@ -20,6 +20,8 @@ Every request to medas-api is made by the Next server. The browser only ever tal
 
 That is what keeps the API's origin out of the browser bundle, removes any need for CORS, and lets one build run in any environment.
 
+Both steps need a signed-in user. [Clerk](https://clerk.com) handles the session: signed out, [`proxy.ts`](medas-ui/proxy.ts) redirects everything but `/sign-in` and `/sign-up` to the sign-in page, and the page and the Server Action each check the session again, since a Server Action is a POST endpoint anyone can call.
+
 One endpoint answers every message. `conversationId` is optional: without it the API starts a conversation and seeds the greeting, with it the message is appended to that thread. A caller that has just opened the app does not have to know which case it is in, so the composer has no branch — it passes whatever id it holds, which is empty on the first send. The id comes back in the response and lives in a client-side store.
 
 Nothing is read back: the UI keeps the history it was given, so a reload starts from the greeting again.
@@ -95,10 +97,13 @@ yarn install
 
 ## Environment
 
-| Variable             | Read by                                            | Default                 | If it is wrong                           |
-| -------------------- | -------------------------------------------------- | ----------------------- | ---------------------------------------- |
-| `API_BASE_URL`       | The Next **server** → `api/init.ts`, `api/chat.ts` | `http://localhost:8000` | The page fails to render, and sends fail |
-| `OPENROUTER_API_KEY` | medas-api — embeddings and the model calls         | none                    | Answering fails; the API still starts    |
+| Variable                                                | Read by                                            | Default                 | If it is wrong                           |
+| ------------------------------------------------------- | -------------------------------------------------- | ----------------------- | ---------------------------------------- |
+| `API_BASE_URL`                                          | The Next **server** → `api/init.ts`, `api/chat.ts` | `http://localhost:8000` | The page fails to render, and sends fail |
+| `OPENROUTER_API_KEY`                                    | medas-api — embeddings and the model calls         | none                    | Answering fails; the API still starts    |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | medas-ui — the Clerk session                       | none                    | Sign-in does not load                    |
+
+The Clerk keys go in `medas-ui/.env.local`, and nobody needs to copy them by hand: `yarn dlx clerk@latest init` writes development keys there, for an unclaimed app when you are signed out of Clerk. `yarn dlx clerk@latest auth login` claims it later. The build does not need them, so CI runs without them.
 
 `API_BASE_URL` has no `NEXT_PUBLIC_` counterpart on purpose. A `NEXT_PUBLIC_` value is inlined into the bundle at build time, so a built artefact would carry whatever URL the build machine had and the browser would call the API cross-origin. Read on the server at request time instead, it can be changed per environment without rebuilding.
 
@@ -193,13 +198,13 @@ The query side is [`agent/search.py`](medas-api/agent/search.py) — one functio
 
 ## Testing
 
-79 tests in medas-api, 29 in medas-ui.
+79 tests in medas-api, 30 in medas-ui.
 
 The agent is stubbed at one seam. `main.ask_agent` is what every test patches, so the model, the tool, the prompt and the vector store all stay out of the suite — otherwise it would be slow, billable, non-deterministic, and impossible in CI where none of them exist. The fake records the turns it was given, which is how the history tests assert on what the agent was actually told.
 
 On the frontend:
 
-- [`medas-ui/api/chat.test.ts`](medas-ui/api/chat.test.ts) stubs `globalThis.fetch` rather than mocking the module, so URL building and response mapping actually run — every bug this file has had lived in exactly those two places.
+- [`medas-ui/api/chat.test.ts`](medas-ui/api/chat.test.ts) stubs `globalThis.fetch` rather than mocking the module, so URL building and response mapping actually run — every bug this file has had lived in exactly those two places. The Clerk session is mocked, and one test covers `ask` refusing a signed-out caller before it reaches the API.
 - [`medas-ui/components/chat/chat-composer.test.tsx`](medas-ui/components/chat/chat-composer.test.tsx) mocks the API client instead, and covers what the composer sends, what it does with the answer, and what it shows when a send fails. An `ask` held open by the test covers the wait in between: the message shown before the reply, handed over to its stored copy once, and no second send until then.
 - [`medas-ui/components/chat/chat-messages.test.tsx`](medas-ui/components/chat/chat-messages.test.tsx) covers the list around that wait — the typing indicator up only while a message is pending, the greeting kept in view, and a scroll to the bottom when it grows. jsdom has no layout, so `scrollIntoView` and `matchMedia` are stubbed and the test asserts the call, not the scroll.
 
@@ -246,7 +251,7 @@ Working end to end: the chat UI, one endpoint that starts a conversation or cont
 
 Safety and correctness first, because these are the ones that matter if this ever sees a real record.
 
-- **No auth, and no ownership check.** The user is a hardcoded constant in the UI, `userId` is a query parameter on a public endpoint, and `/ask` never checks that `conversationId` belongs to `userId`. Anyone who can reach medas-api can read or write any patient's conversation by guessing an id. The two identifiers arriving on the same request makes the pair _look_ checked; it is not.
+- **medas-api has no auth, and no ownership check.** The UI requires a Clerk login, but medas-api does not check it: the user is still a hardcoded constant rather than the signed-in one, `userId` is a query parameter on a public endpoint, and `/ask` never checks that `conversationId` belongs to `userId`. Anyone who can reach medas-api can read or write any patient's conversation by guessing an id. The two identifiers arriving on the same request makes the pair _look_ checked; it is not.
 - **Nothing bounds the agent's search loop.** `create_agent` defaults its recursion limit to 9,999, and the model will keep rephrasing a query it has already run. Observed: a single request accumulating ~112,000 tokens of passages — against a record that is ~2,400 tokens in total — until it exceeded the model's context window and the patient got nothing. Withdrawing the tool after a budget of searches is the fix that worked; a recursion limit alone stops the run but ends it without an answer.
 - **The agent has no error handling.** `answer()` has no try/except, so a failed model call is a 500 rather than something the patient can act on.
 - **The prompt documents a `<patient>` block that is never sent.** Its Inputs section describes identity and demographics arriving with each question; the route sends only the conversation. The model learns who the patient is from the identity line repeated in each retrieved chunk, which works but is not what the prompt says.
