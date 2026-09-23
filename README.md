@@ -22,7 +22,7 @@ That is what keeps the API's origin out of the browser bundle, removes any need 
 
 Both steps need a signed-in user. [Clerk](https://clerk.com) handles the session: signed out, [`proxy.ts`](medas-ui/proxy.ts) redirects everything but `/sign-in` and `/sign-up` to the sign-in page, and the page and the Server Action each check the session again, since a Server Action is a POST endpoint anyone can call.
 
-Every call to medas-api carries the user's Clerk session token as `Authorization: Bearer …`, and the API takes who is asking from that token alone — never from the request. [`auth/session.py`](medas-api/auth/session.py) verifies it (signature, expiry, and that it was issued for this site) and resolves it to a `users` row: by `users.clerk_user_id` once linked, and on the first sign-in by matching the account's **verified** primary email to an unclaimed row. An account that matches no row is refused with `403 No record for this account` rather than given a new one — a user here is someone with a medical record. Every conversation read and write is scoped to that user in the same SQL statement, so someone else's conversation is a `404`, exactly like one that does not exist. Only `/health/db` is public.
+Every call to medas-api carries the user's Clerk session token as `Authorization: Bearer …`, and the API takes who is asking from that token alone — never from the request. [`auth/session.py`](medas-api/auth/session.py) verifies it (signature, expiry, and that it was issued for this site) and resolves it to a `users` row: by `users.clerk_user_id` once linked, and on the first sign-in by matching the account's **verified** primary email to an unclaimed row, or, when no row has that email, by creating one. Without a verified email the account is refused with `403`, since the row needs one. Every conversation read and write is scoped to that user in the same SQL statement, so someone else's conversation is a `404`, exactly like one that does not exist. Only `/health/db` is public.
 
 One endpoint answers every message. `conversationId` is optional: without it the API starts a conversation and seeds the greeting, with it the message is appended to that thread. A caller that has just opened the app does not have to know which case it is in, so the composer has no branch — it passes whatever id it holds, which is empty on the first send. The id comes back in the response and lives in a client-side store.
 
@@ -56,7 +56,7 @@ The DSN is composed from the individual `DATABASE_*` variables via SQLAlchemy's 
 
 ### Seed the placeholder user
 
-**Required, and easy to miss.** Signing up with Clerk does not create a user: the first sign-in links your Clerk account to the `users` row with the same verified email, and with no such row every request is `403 No record for this account`. The one medical record belongs to this user, so this is also the account that can chat about it.
+Any Clerk account gets a `users` row on its first sign-in, so this is not needed to use the app. It is how you sign in as the owner of the one medical record: the first sign-in links your Clerk account to the unclaimed row with the same verified email, instead of creating a new one.
 
 The seed uses `pat_7f3c9a21+clerk_test@example.com`. In a Clerk development instance any `+clerk_test` address is a test address: no email is sent, and the verification code is always `424242`. Sign up with that address and code, and the account links on your first request. To use a real address instead, put it in the `INSERT` — it has to be one you can verify.
 
@@ -240,7 +240,7 @@ The build needs no API. `/` renders per request, so nothing is fetched while bui
 
 ## Troubleshooting
 
-**Every request is 403 `No record for this account`.** Your Clerk account's verified email matches no `users` row — see Seed the placeholder user. **Every request is 401.** The token did not verify: check `CLERK_SECRET_KEY` in `medas-api/.env` is the same key as the UI's, and that the UI's origin is in `CLERK_AUTHORIZED_PARTIES`.
+**Every request is 403.** `No verified email for this account`: the Clerk account's primary email is not verified. `This email belongs to another account`: a `users` row with that email is already linked to a different Clerk account. **Every request is 401.** The token did not verify: check `CLERK_SECRET_KEY` in `medas-api/.env` is the same key as the UI's, and that the UI's origin is in `CLERK_AUTHORIZED_PARTIES`.
 
 **Sending shows a red banner.** The banner quotes the API's own error. `Failed to fetch` means the Next server could not reach medas-api — check `API_BASE_URL` and that the API is running. `404 User not found` means the seed step above was skipped.
 
@@ -266,7 +266,7 @@ Working end to end: the chat UI, one endpoint that starts a conversation or cont
 
 Safety and correctness first, because these are the ones that matter if this ever sees a real record.
 
-- **The agent searches one hardcoded record.** Requests are authenticated and conversations are scoped to their owner, but `search_record` is still called with the constant `RECORD_ID` in [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py), not the signed-in user's `pat_{id}`. Today only the one seeded user can get past `403`, so nobody reads a record that is not theirs — but a second user would be answered from the first one's record until the agent is given the caller's.
+- **The agent searches one hardcoded record.** Requests are authenticated and conversations are scoped to their owner, but `search_record` is still called with the constant `RECORD_ID` in [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py), not the signed-in user's `pat_{id}`. Every new account gets a `users` row on its first sign-in, so **any signed-in user is answered from that one record** — the seeded patient's — until the agent is given the caller's.
 - **Nothing bounds the agent's search loop.** `create_agent` defaults its recursion limit to 9,999, and the model will keep rephrasing a query it has already run. Observed: a single request accumulating ~112,000 tokens of passages — against a record that is ~2,400 tokens in total — until it exceeded the model's context window and the patient got nothing. Withdrawing the tool after a budget of searches is the fix that worked; a recursion limit alone stops the run but ends it without an answer.
 - **The agent has no error handling.** `answer()` has no try/except, so a failed model call is a 500 rather than something the patient can act on.
 - **The prompt documents a `<patient>` block that is never sent.** Its Inputs section describes identity and demographics arriving with each question; the route sends only the conversation. The model learns who the patient is from the identity line repeated in each retrieved chunk, which works but is not what the prompt says.

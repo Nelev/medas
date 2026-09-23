@@ -145,12 +145,15 @@ async def test_machine_tokens_are_refused_without_asking_clerk(
 
 
 class FakeSession:
-    """The two user statements, answered from a dict of linked accounts."""
+    """The three user statements, answered from dicts of rows."""
 
-    def __init__(self, linked=None, unclaimed=None) -> None:
+    def __init__(self, linked=None, unclaimed=None, taken=()) -> None:
         self.linked: dict[str, uuid.UUID] = dict(linked or {})
         # email -> user id, for rows no Clerk account has claimed yet.
         self.unclaimed: dict[str, uuid.UUID] = dict(unclaimed or {})
+        # Emails of the rows in `linked`, which the INSERT must not reuse.
+        self.taken = {email.lower() for email in taken}
+        self.created: dict[str, uuid.UUID] = {}
         self.committed = False
 
     async def scalar(self, statement, params):
@@ -159,6 +162,19 @@ class FakeSession:
             user_id = self.unclaimed.pop(params["email"].lower(), None)
             if user_id is not None:
                 self.linked[params["clerk_user_id"]] = user_id
+            return user_id
+        if sql.startswith("INSERT INTO users"):
+            email, clerk_id = params["email"].lower(), params["clerk_user_id"]
+            # ON CONFLICT DO NOTHING, on either unique column.
+            if (
+                email in self.taken
+                or email in self.unclaimed
+                or clerk_id in self.linked
+            ):
+                return None
+            user_id = uuid.uuid4()
+            self.linked[clerk_id] = self.created[clerk_id] = user_id
+            self.taken.add(email)
             return user_id
         return self.linked.get(params["clerk_user_id"])
 
@@ -196,23 +212,39 @@ async def test_the_first_sign_in_claims_the_user_with_that_email(settings, clerk
 
     assert await current_user(CLERK_ID, session, settings) == USER_ID
     assert session.linked == {CLERK_ID: USER_ID}
+    # Claimed, so nothing new was created alongside it.
+    assert session.created == {}
     assert session.committed
 
 
-async def test_an_account_matching_no_user_is_403(settings, clerk_email):
-    session = FakeSession(unclaimed={"someone.else@example.com": uuid.uuid4()})
+async def test_an_account_matching_no_user_gets_a_new_one(settings, clerk_email):
+    someone_else = uuid.uuid4()
+    session = FakeSession(unclaimed={"someone.else@example.com": someone_else})
 
-    with pytest.raises(HTTPException) as caught:
-        await current_user(CLERK_ID, session, settings)
+    user_id = await current_user(CLERK_ID, session, settings)
 
-    assert caught.value.status_code == 403
-    assert caught.value.detail == "No record for this account"
-    # Refused, not created: nothing was written.
-    assert session.linked == {}
-    assert not session.committed
+    assert session.created == {CLERK_ID: user_id}
+    assert user_id != someone_else
+    # Another address's unclaimed row is left for its own account.
+    assert session.unclaimed == {"someone.else@example.com": someone_else}
+    assert session.committed
 
 
-async def test_an_unverified_email_links_nothing(settings, clerk_email):
+async def test_the_created_user_is_found_by_its_account_afterwards(
+    settings, clerk_email
+):
+    session = FakeSession()
+
+    first = await current_user(CLERK_ID, session, settings)
+    again = await current_user(CLERK_ID, session, settings)
+
+    assert again == first
+    # One row, and Clerk asked for the email only the first time.
+    assert len(session.created) == 1
+    assert clerk_email.calls == [CLERK_ID]
+
+
+async def test_an_unverified_email_links_and_creates_nothing(settings, clerk_email):
     clerk_email.answer["email"] = None
     session = FakeSession(unclaimed={EMAIL: USER_ID})
 
@@ -220,28 +252,34 @@ async def test_an_unverified_email_links_nothing(settings, clerk_email):
         await current_user(CLERK_ID, session, settings)
 
     assert caught.value.status_code == 403
+    assert caught.value.detail == "No verified email for this account"
     assert session.unclaimed == {EMAIL: USER_ID}
+    assert session.created == {}
+    assert not session.committed
 
 
 async def test_a_user_claimed_by_another_account_is_not_taken(settings, clerk_email):
-    # Same email, second Clerk account: the row is already someone's.
-    session = FakeSession(linked={"user_first": USER_ID})
+    # Same email, second Clerk account: the row is already someone's, and
+    # a second row cannot have its address either.
+    session = FakeSession(linked={"user_first": USER_ID}, taken={EMAIL})
 
     with pytest.raises(HTTPException) as caught:
         await current_user(CLERK_ID, session, settings)
 
     assert caught.value.status_code == 403
+    assert caught.value.detail == "This email belongs to another account"
     assert session.linked == {"user_first": USER_ID}
+    assert not session.committed
 
 
-async def test_losing_the_race_to_link_yourself_is_not_a_403(settings, clerk_email):
-    # Two first requests at once: the other claimed the row for this same
-    # account between the lookup and the UPDATE.
+async def test_losing_the_race_to_create_yourself_is_not_a_403(settings, clerk_email):
+    # Two first requests at once: the other linked or created the row for
+    # this same account between the lookup and the writes.
     session = FakeSession()
     lookups = iter([None, USER_ID])
 
     async def scalar(statement, params):
-        if str(statement).startswith("UPDATE users"):
+        if str(statement).startswith(("UPDATE users", "INSERT INTO users")):
             return None
         return next(lookups)
 
