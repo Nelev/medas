@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.settings import AuthSettings, get_auth_settings
 from database.database import get_session
-from model import link_clerk_user, user_by_clerk_id
+from model import create_clerk_user, link_clerk_user, user_by_clerk_id
 
 __all__ = ["CurrentUser", "clerk_user_id", "current_user", "verified_email"]
 
@@ -122,30 +122,40 @@ async def current_user(
     """The id of the users row the signed-in person is.
 
     Linked by clerk_user_id after the first sign-in, which is one indexed
-    lookup per request. On the first, the account's verified email is matched
-    to an unclaimed row and the row is claimed. No match is a 403, not a new
-    row: a user here is someone with a medical record, and signing up with
-    Clerk does not give anyone one.
+    lookup per request. On the first, the account's verified email claims an
+    unclaimed row with that address if there is one -- how a seeded user is
+    signed in as -- and otherwise a row is created for the account.
+
+    Still a 403 without a verified email, since the row needs one, or when
+    the email already belongs to a row some other account has claimed.
     """
     user_id = await user_by_clerk_id(session, clerk_id)
     if user_id is not None:
         return user_id
 
     email = await verified_email(clerk_id, settings)
-    if email is not None:
-        user_id = await link_clerk_user(session, clerk_id, email)
+    if email is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No verified email for this account",
+        )
 
-        if user_id is None:
-            # Nothing to claim -- or a request racing this one just claimed
-            # it for this same account. The second is no reason to refuse.
-            user_id = await user_by_clerk_id(session, clerk_id)
-        else:
-            await session.commit()
+    user_id = await link_clerk_user(session, clerk_id, email)
+    if user_id is None:
+        user_id = await create_clerk_user(session, clerk_id, email)
 
+    if user_id is not None:
+        await session.commit()
+        return user_id
+
+    # Neither claimed nor created: a request racing this one got there first
+    # for this same account, which is no reason to refuse -- or the email is
+    # another account's row, which is.
+    user_id = await user_by_clerk_id(session, clerk_id)
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="No record for this account",
+            detail="This email belongs to another account",
         )
 
     return user_id

@@ -9,7 +9,13 @@ table. Importing them here means ``import model`` is enough.
 from database.database import Base
 from model.conversation import Conversation, create_conversation, greeting_text
 from model.message import Message, MessageRole, append_message, list_messages
-from model.user import User, UserRole, link_clerk_user, user_by_clerk_id
+from model.user import (
+    User,
+    UserRole,
+    create_clerk_user,
+    link_clerk_user,
+    user_by_clerk_id,
+)
 
 __all__ = [
     "Base",
@@ -19,6 +25,7 @@ __all__ = [
     "User",
     "UserRole",
     "append_message",
+    "create_clerk_user",
     "create_conversation",
     "greeting_text",
     "link_clerk_user",

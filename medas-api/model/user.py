@@ -10,7 +10,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from database.database import Base
 
-__all__ = ["User", "UserRole", "link_clerk_user", "user_by_clerk_id"]
+__all__ = [
+    "User",
+    "UserRole",
+    "create_clerk_user",
+    "link_clerk_user",
+    "user_by_clerk_id",
+]
 
 
 class UserRole(enum.StrEnum):
@@ -98,3 +104,27 @@ async def link_clerk_user(
     The caller commits.
     """
     return await session.scalar(_LINK, {"clerk_user_id": clerk_user_id, "email": email})
+
+
+# ON CONFLICT DO NOTHING covers both unique columns: a request racing this one
+# that already created the row for this account, or an email some other row
+# holds. Either way nothing is written and nothing is returned, and the caller
+# tells the two apart by looking the account up again.
+_CREATE = text(
+    "INSERT INTO users (email, clerk_user_id) VALUES (:email, :clerk_user_id) "
+    "ON CONFLICT DO NOTHING "
+    "RETURNING id"
+)
+
+
+async def create_clerk_user(
+    session: AsyncSession, clerk_user_id: str, email: str
+) -> uuid.UUID | None:
+    """Create the user for a Clerk account signing in for the first time.
+
+    Returns the new user's id, or None when either the account or the email
+    already has a row. The caller commits.
+    """
+    return await session.scalar(
+        _CREATE, {"clerk_user_id": clerk_user_id, "email": email}
+    )
