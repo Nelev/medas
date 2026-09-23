@@ -87,34 +87,29 @@ async def test_no_token_is_401_with_a_bearer_challenge(settings):
 
 
 @pytest.mark.parametrize(
-    "claims",
+    "make_token",
     [
-        pytest.param({"exp": int(time.time()) - 3600}, id="expired"),
-        pytest.param({"nbf": int(time.time()) + 3600}, id="not-yet-valid"),
+        pytest.param(lambda sign: sign(exp=int(time.time()) - 3600), id="expired"),
+        pytest.param(
+            lambda sign: sign(nbf=int(time.time()) + 3600), id="not-yet-valid"
+        ),
         # Signed properly, but for some other site that uses Clerk.
-        pytest.param({"azp": "https://elsewhere.example"}, id="other-azp"),
-        pytest.param({"azp": None}, id="no-azp"),
+        pytest.param(
+            lambda sign: sign(azp="https://elsewhere.example"), id="other-azp"
+        ),
+        pytest.param(lambda sign: sign(azp=None), id="no-azp"),
+        pytest.param(
+            lambda sign: sign(
+                key=rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            ),
+            id="another-key",
+        ),
+        pytest.param(lambda sign: "not-a-jwt", id="garbage"),
     ],
 )
-async def test_a_token_that_fails_verification_is_401(settings, sign, claims):
+async def test_a_token_that_fails_verification_is_401(settings, sign, make_token):
     with pytest.raises(HTTPException) as caught:
-        await clerk_user_id(bearer(sign(**claims)), settings)
-
-    assert caught.value.status_code == 401
-
-
-async def test_a_token_signed_by_another_key_is_401(settings, sign):
-    stranger = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-
-    with pytest.raises(HTTPException) as caught:
-        await clerk_user_id(bearer(sign(key=stranger)), settings)
-
-    assert caught.value.status_code == 401
-
-
-async def test_garbage_is_401(settings):
-    with pytest.raises(HTTPException) as caught:
-        await clerk_user_id(bearer("not-a-jwt"), settings)
+        await clerk_user_id(bearer(make_token(sign)), settings)
 
     assert caught.value.status_code == 401
 
@@ -316,29 +311,21 @@ def address(id_, email, status):
     )
 
 
-async def test_verified_email_is_the_primary_verified_address(settings, monkeypatch):
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("verified", EMAIL), ("unverified", None), (None, None)],
+)
+async def test_verified_email_is_the_primary_address_only_once_verified(
+    settings, monkeypatch, status, expected
+):
+    # A verified secondary address never stands in for the primary one.
     user = SimpleNamespace(
         primary_email_address_id="idn_primary",
         email_addresses=[
             address("idn_other", "other@example.com", "verified"),
-            address("idn_primary", EMAIL, "verified"),
-        ],
-    )
-    monkeypatch.setattr(auth.session, "Clerk", fake_clerk(user))
-
-    assert await verified_email(CLERK_ID, settings) == EMAIL
-
-
-@pytest.mark.parametrize("status", ["unverified", None])
-async def test_an_unverified_primary_address_is_no_email(settings, monkeypatch, status):
-    # And a verified secondary does not stand in for it.
-    user = SimpleNamespace(
-        primary_email_address_id="idn_primary",
-        email_addresses=[
             address("idn_primary", EMAIL, status),
-            address("idn_other", "other@example.com", "verified"),
         ],
     )
     monkeypatch.setattr(auth.session, "Clerk", fake_clerk(user))
 
-    assert await verified_email(CLERK_ID, settings) is None
+    assert await verified_email(CLERK_ID, settings) == expected

@@ -15,7 +15,8 @@ from clerk_backend_api.security import (
     VerifyTokenOptions,
     verify_token_async,
 )
-from clerk_backend_api.security.types import TokenPrefix
+from clerk_backend_api.security.machine import get_token_type
+from clerk_backend_api.security.types import TokenType
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,12 +30,6 @@ __all__ = ["CurrentUser", "clerk_user_id", "current_user", "verified_email"]
 # auto_error=False so a missing header is our 401, with the same shape as a
 # bad token, rather than FastAPI's own response.
 _bearer = HTTPBearer(auto_error=False)
-
-# verify_token_async also accepts API keys, OAuth and machine tokens, which it
-# checks against Clerk's API. Those are for machines acting on their own
-# behalf; this API only answers a person's session, so they are refused
-# before verification rather than trusted after it.
-_NOT_A_SESSION = tuple(prefix.value for prefix in TokenPrefix)
 
 # Failures that are ours or Clerk's, not the caller's: retrying with the same
 # token could succeed, so they are a 503 rather than a 401.
@@ -63,7 +58,11 @@ async def clerk_user_id(
 
     token = credentials.credentials
 
-    if token.startswith(_NOT_A_SESSION):
+    # verify_token_async also accepts API keys, OAuth and machine tokens, which
+    # it checks against Clerk's API. Those are for machines acting on their own
+    # behalf; this API only answers a person's session, so they are refused
+    # before verification -- by the same classification the SDK dispatches on.
+    if get_token_type(token) != TokenType.SESSION_TOKEN:
         raise _unauthorized("Not a session token")
 
     try:

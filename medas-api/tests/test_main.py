@@ -24,7 +24,6 @@ from main import app
 
 SERVER_VERSION = "18.0 (Debian 18.0-1)"
 
-# The owning user is a query parameter; the body is just the message.
 # Who every request is from: current_user is overridden to return it, so
 # the routes are tested apart from token verification (tests/test_auth.py).
 USER_ID = uuid.UUID("7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0")
