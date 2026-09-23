@@ -1,9 +1,10 @@
 import { Stethoscope, User } from "lucide-react"
+import type { ComponentProps, ReactNode } from "react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Message, MessageAvatar, MessageContent } from "@/components/ui/message"
-import { ChatMessageProps, Severity } from "@/model/ChatMessage"
+import { ChatMessageProps, ChatRole, Severity } from "@/model/ChatMessage"
 
 // Straight from the prompt's table, shortened to fit a chip. The code is
 // shown alongside, so the word is a gloss rather than the only signal.
@@ -16,10 +17,59 @@ const SEVERITY_LABEL: Record<Severity, string> = {
 }
 
 export function ChatMessage({ role, text, severity }: ChatMessageProps) {
-  const isUser = role === "user"
-  const RoleIcon = isUser ? User : Stethoscope
   // The one case the accent colour is spent on: an answer that says go now.
   const isUrgent = severity === "S1"
+
+  return (
+    <MessageRow
+      speaker={role}
+      isUrgent={isUrgent}
+      footer={
+        severity ? (
+          // Stored with the turn and returned in the payload since the API
+          // started triaging; this is where it finally shows.
+          <span
+            className={`mt-1.5 inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[0.625rem] tracking-[0.04em] uppercase ${
+              isUrgent
+                ? "border-pulse/45 text-pulse"
+                : "border-primary/30 text-primary"
+            }`}
+          >
+            <span
+              className={`size-1.5 rounded-full ${isUrgent ? "bg-pulse" : "bg-primary"}`}
+              aria-hidden
+            />
+            {severity} {SEVERITY_LABEL[severity]}
+          </span>
+        ) : null
+      }
+    >
+      {text}
+    </MessageRow>
+  )
+}
+
+interface MessageRowProps extends Omit<
+  ComponentProps<typeof BubbleContent>,
+  "className"
+> {
+  // Not `role`: that name belongs to the bubble's ARIA role, passed through.
+  speaker: ChatRole
+  isUrgent?: boolean
+  // Under the bubble, inside the same column -- the severity chip.
+  footer?: ReactNode
+}
+
+// The row every turn is drawn in, exported so a placeholder for a turn (the
+// typing indicator) is the same row the turn will replace it with.
+export function MessageRow({
+  speaker,
+  isUrgent = false,
+  footer,
+  ...contentProps
+}: MessageRowProps) {
+  const isUser = speaker === "user"
+  const RoleIcon = isUser ? User : Stethoscope
 
   return (
     // Rendered with no wrapper element: the list already spaces rows with
@@ -50,6 +100,7 @@ export function ChatMessage({ role, text, severity }: ChatMessageProps) {
               assistant sits on the sage wash with a rule down its left edge --
               a margin mark, the way an annotated chart is marked. */}
           <BubbleContent
+            {...contentProps}
             className={
               isUser
                 ? "bg-primary! shadow-primary/25 rounded-2xl rounded-br-md px-4 py-2.5 shadow-md"
@@ -57,28 +108,10 @@ export function ChatMessage({ role, text, severity }: ChatMessageProps) {
                   ? "bg-pulse/7! border-pulse/25 border-l-pulse rounded-2xl rounded-bl-md border border-l-2 px-4 py-2.5"
                   : "bg-secondary! border-primary/15 border-l-primary/55 rounded-2xl rounded-bl-md border border-l-2 px-4 py-2.5"
             }
-          >
-            {text}
-          </BubbleContent>
+          />
         </Bubble>
 
-        {severity ? (
-          // Stored with the turn and returned in the payload since the API
-          // started triaging; this is where it finally shows.
-          <span
-            className={`mt-1.5 inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[0.625rem] tracking-[0.04em] uppercase ${
-              isUrgent
-                ? "border-pulse/45 text-pulse"
-                : "border-primary/30 text-primary"
-            }`}
-          >
-            <span
-              className={`size-1.5 rounded-full ${isUrgent ? "bg-pulse" : "bg-primary"}`}
-              aria-hidden
-            />
-            {severity} {SEVERITY_LABEL[severity]}
-          </span>
-        ) : null}
+        {footer}
       </MessageContent>
     </Message>
   )

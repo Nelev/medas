@@ -10,6 +10,7 @@ import {
   createdConversation,
   firstMessage,
   greeting,
+  pendingMessage,
   storedMessage,
   storedReply,
 } from "@/test/fixtures"
@@ -125,6 +126,100 @@ describe("ChatComposer", () => {
           greeting,
           firstMessage,
           // The question, then the answer to it -- never the other way round.
+          storedMessage,
+          storedReply,
+        ]),
+      )
+    })
+  })
+
+  describe("while the reply is on its way", () => {
+    // An ask that resolves only when the test says so, to hold the composer
+    // in the window between submit and reply.
+    const holdAsk = () => {
+      let settle!: {
+        resolve: (value: Awaited<ReturnType<typeof ask>>) => void
+        reject: (cause: Error) => void
+      }
+      mockedAsk.mockReturnValue(
+        new Promise((resolve, reject) => {
+          settle = { resolve, reject }
+        }),
+      )
+      return settle
+    }
+
+    it("shows the message before the API answers", async () => {
+      holdAsk()
+
+      render(<ChatComposer />)
+      await send("Do I have any allergies?")
+
+      expect(useChatStore.getState().pending).toEqual(pendingMessage)
+      // Held apart, so the greeting the list falls back to stays in view.
+      expect(useChatStore.getState().messages).toEqual([])
+    })
+
+    it("hands over to the stored copy once the reply lands", async () => {
+      const settle = holdAsk()
+
+      render(<ChatComposer />)
+      await send("Do I have any allergies?")
+      settle.resolve({
+        conversationId: CONVERSATION_ID,
+        turns: createdConversation.messages,
+      })
+
+      await waitFor(() => expect(useChatStore.getState().pending).toBeNull())
+      // Once, as stored -- not the optimistic copy as well.
+      expect(useChatStore.getState().messages).toEqual([greeting, firstMessage])
+    })
+
+    it("takes the message back out when the send fails", async () => {
+      const settle = holdAsk()
+
+      render(<ChatComposer />)
+      await send("hello")
+      settle.reject(new Error("Failed to fetch"))
+
+      await screen.findByRole("alert")
+      expect(useChatStore.getState().pending).toBeNull()
+      expect(useChatStore.getState().messages).toEqual([])
+    })
+
+    it("does not send a second message until the first is answered", async () => {
+      holdAsk()
+
+      render(<ChatComposer />)
+      await send("hello")
+
+      expect(
+        screen.getByRole("button", { name: "Send message" }),
+      ).toBeDisabled()
+      // Enter submits the form without going through the button.
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Message" }),
+        "again{Enter}",
+      )
+      expect(mockedAsk).toHaveBeenCalledTimes(1)
+    })
+
+    it("appends to the list as it stands when the reply lands", async () => {
+      // A list captured at submit would drop anything written meanwhile.
+      const settle = holdAsk()
+
+      render(<ChatComposer />)
+      await send("And my medications?")
+      useChatStore.setState({ messages: [greeting, firstMessage] })
+      settle.resolve({
+        conversationId: CONVERSATION_ID,
+        turns: [storedMessage, storedReply],
+      })
+
+      await waitFor(() =>
+        expect(useChatStore.getState().messages).toEqual([
+          greeting,
+          firstMessage,
           storedMessage,
           storedReply,
         ]),

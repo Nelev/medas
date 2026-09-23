@@ -193,14 +193,15 @@ The query side is [`agent/search.py`](medas-api/agent/search.py) — one functio
 
 ## Testing
 
-79 tests in medas-api, 20 in medas-ui.
+79 tests in medas-api, 29 in medas-ui.
 
 The agent is stubbed at one seam. `main.ask_agent` is what every test patches, so the model, the tool, the prompt and the vector store all stay out of the suite — otherwise it would be slow, billable, non-deterministic, and impossible in CI where none of them exist. The fake records the turns it was given, which is how the history tests assert on what the agent was actually told.
 
 On the frontend:
 
 - [`medas-ui/api/chat.test.ts`](medas-ui/api/chat.test.ts) stubs `globalThis.fetch` rather than mocking the module, so URL building and response mapping actually run — every bug this file has had lived in exactly those two places.
-- [`medas-ui/components/chat/chat-composer.test.tsx`](medas-ui/components/chat/chat-composer.test.tsx) mocks the API client instead, and covers what the composer sends, what it does with the answer, and what it shows when a send fails.
+- [`medas-ui/components/chat/chat-composer.test.tsx`](medas-ui/components/chat/chat-composer.test.tsx) mocks the API client instead, and covers what the composer sends, what it does with the answer, and what it shows when a send fails. An `ask` held open by the test covers the wait in between: the message shown before the reply, handed over to its stored copy once, and no second send until then.
+- [`medas-ui/components/chat/chat-messages.test.tsx`](medas-ui/components/chat/chat-messages.test.tsx) covers the list around that wait — the typing indicator up only while a message is pending, the greeting kept in view, and a scroll to the bottom when it grows. jsdom has no layout, so `scrollIntoView` and `matchMedia` are stubbed and the test asserts the call, not the scroll.
 
 API response shapes live in `medas-ui/test/fixtures.ts`, so a contract change is a one-file edit. `test/setup.ts` resets the store before each test — it is a module singleton, so without that, whichever test ran first would decide the next one's result.
 

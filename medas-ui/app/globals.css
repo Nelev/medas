@@ -279,8 +279,8 @@
     }
   }
 
-  /* The record-is-live dot. The ring is the only motion in the interface, and
-     the reduced-motion rule above stops it. */
+  /* The record-is-live dot. The ring and the typing dots are the only motion
+     in the interface, and the reduced-motion rule above stops both. */
   .pulse-dot::after {
     content: "";
     position: absolute;
@@ -300,6 +300,29 @@
     100% {
       transform: scale(1.9);
       opacity: 0;
+    }
+  }
+
+  /* The reply-in-progress dots. A rise and fade rather than a bounce: calmer,
+     and it keeps the row from jittering. Under reduced motion the blanket
+     rule runs this once, which ends at rest -- three still dots still read. */
+  /* Only the motion lives here; size, shape and colour are utilities on the
+     element, as on the severity chip's dot. */
+  .typing-dot {
+    display: block;
+    animation: typing-dot 1.2s ease-in-out infinite;
+  }
+
+  @keyframes typing-dot {
+    0%,
+    60%,
+    100% {
+      transform: translateY(0);
+      opacity: 0.35;
+    }
+    30% {
+      transform: translateY(-0.2rem);
+      opacity: 0.9;
     }
   }
 }
