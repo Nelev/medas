@@ -1,7 +1,6 @@
 "use server"
 
-import { auth } from "@clerk/nextjs/server"
-
+import { authorization } from "@/api/session"
 import { ChatMessageProps } from "@/model/ChatMessage"
 
 // Server Actions: the composer calls these from the browser, but the fetch
@@ -11,10 +10,6 @@ import { ChatMessageProps } from "@/model/ChatMessage"
 // would be calling the API cross-origin. Read here at request time instead,
 // so one build runs in any environment. It is also why the API needs no CORS.
 const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000"
-
-// Hardcoded until there is a session to read it from. The API takes it as a
-// query parameter and it must match a row in users, or the insert 404s.
-const USER_ID = "7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 
 // What the API stores, as opposed to ChatMessageProps which is what the UI
 // renders: the id and timestamp are minted server-side and come back with it.
@@ -38,11 +33,16 @@ interface AskResult {
   turns: StoredMessage[]
 }
 
-const post = async <T>(url: string, body: unknown): Promise<T> => {
+const post = async <T>(
+  url: string,
+  body: unknown,
+  headers: Record<string, string>,
+): Promise<T> => {
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...headers,
     },
     body: JSON.stringify(body),
   })
@@ -62,24 +62,19 @@ const post = async <T>(url: string, body: unknown): Promise<T> => {
 // question and the answer; with one they are the question and the answer.
 // Either way they are what this request added, and the caller appends them.
 //
-// A 404 on an id that was supplied means the conversation is unknown or
-// soft-deleted -- never a reason to silently start a new one, which is why
+// A 404 on an id that was supplied means the conversation is unknown,
+// soft-deleted or not this user's -- never a reason to silently start a new one, which is why
 // the id is omitted rather than guessed at.
 const ask = async (
   message: ChatMessageProps,
   conversationId?: string,
 ): Promise<AskResult> => {
   // A Server Action is a POST endpoint anyone can call, not only this app's
-  // composer, so the proxy is not enough on its own: check the session here,
-  // next to the call it guards.
-  const { userId } = await auth()
-
-  if (!userId) {
-    throw new Error("Not signed in")
-  }
+  // composer, so the proxy is not enough on its own: the session is checked
+  // here, next to the call it guards, and its token is what the API checks.
+  const headers = await authorization()
 
   const url = new URL(`${API_BASE_URL}/ask`)
-  url.searchParams.set("userId", USER_ID)
 
   if (conversationId) {
     url.searchParams.set("conversationId", conversationId)
@@ -87,7 +82,11 @@ const ask = async (
 
   // The body is the message itself -- role and text at the top level.
   // Wrapping it in { message } is a 422.
-  const data = await post<ConversationTurnsResponse>(url.toString(), message)
+  const data = await post<ConversationTurnsResponse>(
+    url.toString(),
+    message,
+    headers,
+  )
 
   return { conversationId: data.conversation_id, turns: data.messages }
 }

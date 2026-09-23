@@ -10,16 +10,18 @@ import {
   jsonResponse,
   storedMessage,
   storedReply,
-  USER_ID,
 } from "@/test/fixtures"
 
 // The session is Clerk's to read, so it is mocked; each test starts signed in.
 vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }))
 
-const signInAs = (userId: string | null) =>
-  vi
-    .mocked(auth)
-    .mockResolvedValue({ userId } as Awaited<ReturnType<typeof auth>>)
+const TOKEN = "session.jwt.token"
+
+const signInAs = (userId: string | null, token: string | null = TOKEN) =>
+  vi.mocked(auth).mockResolvedValue({
+    userId,
+    getToken: async () => token,
+  } as unknown as Awaited<ReturnType<typeof auth>>)
 
 beforeEach(() => {
   signInAs("user_test")
@@ -45,7 +47,7 @@ const requestFrom = (fetchMock: ReturnType<typeof vi.fn>) => {
 }
 
 describe("ask", () => {
-  it("posts to /ask with the owner and the conversation", async () => {
+  it("posts to /ask with the session token and the conversation", async () => {
     const fetchMock = stubFetch(jsonResponse(askedTurns, 201))
 
     await ask({ role: "user", text: "And my medications?" }, CONVERSATION_ID)
@@ -54,10 +56,12 @@ describe("ask", () => {
     const { searchParams, pathname } = new URL(url)
 
     expect(pathname).toBe("/ask")
-    expect(searchParams.get("userId")).toBe(USER_ID)
     expect(searchParams.get("conversationId")).toBe(CONVERSATION_ID)
     expect(init.method).toBe("POST")
-    expect(init.headers).toMatchObject({ "Content-Type": "application/json" })
+    expect(init.headers).toMatchObject({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${TOKEN}`,
+    })
   })
 
   it("omits the conversation when there is not one yet", async () => {
@@ -70,7 +74,8 @@ describe("ask", () => {
     const { searchParams } = new URL(requestFrom(fetchMock).url)
 
     expect(searchParams.has("conversationId")).toBe(false)
-    expect(searchParams.get("userId")).toBe(USER_ID)
+    // Who is asking is the token's to say, never the URL's.
+    expect(searchParams.has("userId")).toBe(false)
   })
 
   it("returns the whole opening when it started the conversation", async () => {
@@ -114,6 +119,16 @@ describe("ask", () => {
 
   it("refuses to ask without a session, before calling the API", async () => {
     signInAs(null)
+    const fetchMock = stubFetch(jsonResponse(askedTurns, 201))
+
+    await expect(
+      ask({ role: "user", text: "x" }, CONVERSATION_ID),
+    ).rejects.toThrow("Not signed in")
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("refuses to ask when Clerk has no token to give", async () => {
+    signInAs("user_test", null)
     const fetchMock = stubFetch(jsonResponse(askedTurns, 201))
 
     await expect(

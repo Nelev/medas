@@ -1,3 +1,4 @@
+import { authorization } from "@/api/session"
 import { ChatMessageProps } from "@/model/ChatMessage"
 
 // Server-side only: this module is imported from a Server Component, so the
@@ -11,7 +12,7 @@ interface InitResponse {
 const init = async (user: string): Promise<InitResponse> => {
   const url = `${API_BASE_URL}/?user=${encodeURIComponent("Mattia")}`
 
-  const response = await fetch(url)
+  const response = await fetch(url, { headers: await authorization() })
 
   if (!response.ok) {
     throw new Error(`Failed to init profile (${response.status})`)
