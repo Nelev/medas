@@ -146,16 +146,16 @@ Both suites are unit-only by design — no database, no API, no model, no browse
 
 ## API surface
 
-| Method | Path                           | Request        | Response                                                         |
-| ------ | ------------------------------ | -------------- | ---------------------------------------------------------------- |
-| `GET`  | `/?user=<name>`                | —              | `{messages: [{role, text}]}` — the greeting, not persisted       |
-| `POST` | `/ask[?conversationId=<uuid>]` | `{role, text}` | `201 {conversation_id, messages}` — the turns this request added |
-| `GET`  | `/conversations/{id}`          | —              | `{conversation_id, messages}` — the whole history, oldest first  |
-| `GET`  | `/health/db`                   | —              | `{status, server_version}`                                       |
+| Method | Path                                         | Request        | Response                                                         |
+| ------ | -------------------------------------------- | -------------- | ---------------------------------------------------------------- |
+| `GET`  | `/[?user=<name>]`                            | —              | `{messages: [{role, text}]}` — the greeting, not persisted       |
+| `POST` | `/ask[?conversationId=<uuid>][&user=<name>]` | `{role, text}` | `201 {conversation_id, messages}` — the turns this request added |
+| `GET`  | `/conversations/{id}`                        | —              | `{conversation_id, messages}` — the whole history, oldest first  |
+| `GET`  | `/health/db`                                 | —              | `{status, server_version}`                                       |
 
 `POST /ask` returns **what it added**, not the whole thread: three turns when it started the conversation (the greeting, the question, the answer) and two when it appended (the question and the answer). Either way the client appends them to what it already has.
 
-Two things that trip people up: the owning user is a **query parameter**, not a body field, and the message goes in the body **flat** — a `{message: {...}}` wrapper is a 422.
+Three things that trip people up: who is asking is the session token alone, never a request field; `user` is only the name the greeting addresses, an optional **query parameter** (1–200 characters, `"Hi there"` without one) that `POST /ask` reads only when it starts a conversation; and the message goes in the body **flat** — a `{message: {...}}` wrapper is a 422.
 
 `message_id` and `timestamp` are minted server-side and ignored if sent. An assistant turn also carries `severity` (`S1`–`S5`) and `confidence` when the model returned them, stored with the message rather than returned alone: which triage code was given, and when, is what an audit asks about later. An unknown or soft-deleted conversation is a `404`, never an implicit create — that would resurrect deleted threads and let a caller choose its own primary key.
 
@@ -275,7 +275,6 @@ Safety and correctness first, because these are the ones that matter if this eve
 Then the smaller ones:
 
 - **No history on reload.** `GET /conversations/{id}` exists, but nothing calls it: the UI keeps the history it was given in memory, so a refresh returns to the greeting with the stored conversation orphaned.
-- **The greeting is addressed to a hardcoded `"Mattia"`** in two places — `init.ts` ignores its own `user` argument, and the create path passes a literal — so the name shown has nothing to do with whose record is loaded.
 - **No idempotency.** A double-submitted first message creates two conversations.
 - **A submit before hydration is lost.** The composer uses an `onSubmit` handler rather than a form action, so a submission made before React hydrates navigates to `/?message=…` and the message is dropped. React queues submissions for a `<form action={…}>`; a plain handler cannot.
 - **Dead code left by the move to the agent.** [`agent/patient.py`](medas-api/agent/patient.py) — `patient_block`, `record_block`, `record_id`, `UnknownPatient` — has no callers at all; it held the check that a record belongs to the user asking, which nothing performs now. `NewConversation` in `schema/schema.py` is likewise unreferenced.

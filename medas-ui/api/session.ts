@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server"
+import { auth, currentUser } from "@clerk/nextjs/server"
 
 // The signed-in user's Clerk session token, as the header medas-api verifies.
 // Who is asking travels only as this: the API reads the user from the token
@@ -17,4 +17,12 @@ const authorization = async () => {
   return { Authorization: `Bearer ${token}` }
 }
 
-export { authorization }
+// The name the greeting addresses: the first name, as a greeting would say
+// it. The page previews the greeting and the first ask stores it, and both
+// take the name from here so the two cannot differ. Undefined when sign-up
+// did not ask for one, and the API decides what the greeting says then.
+//
+// Not who is asking -- that is the token above. This only picks the words.
+const greetingName = async () => (await currentUser())?.firstName || undefined
+
+export { authorization, greetingName }
