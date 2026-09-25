@@ -76,9 +76,8 @@
   --muted-foreground: oklch(0.5 0.015 170);
   --accent: oklch(0.94 0.012 150);
   --accent-foreground: oklch(0.28 0.03 175);
-  /* Coral, and only ever for urgency: the pulse dot, the send control, and an
-     answer that says go now. Spend it anywhere else and it stops meaning
-     anything. */
+  /* Coral, and only ever for urgency: the send control, and an answer that
+     says go now. Spend it anywhere else and it stops meaning anything. */
   --pulse: oklch(0.6 0.17 32);
   --pulse-foreground: oklch(0.99 0.01 40);
   --destructive: oklch(0.55 0.2 25);
@@ -277,30 +276,6 @@
     .dark .ecg-chaser,
     .dark .ecg-head {
       display: none;
-    }
-  }
-
-  /* The record-is-live dot. The ring and the typing dots are the only motion
-     in the interface, and the reduced-motion rule above stops both. */
-  .pulse-dot::after {
-    content: "";
-    position: absolute;
-    inset: -3px;
-    border-radius: 9999px;
-    border: 1.5px solid var(--pulse);
-    opacity: 0;
-    animation: pulse-ring 2.4s ease-out infinite;
-  }
-
-  @keyframes pulse-ring {
-    0% {
-      transform: scale(0.6);
-      opacity: 0.9;
-    }
-    70%,
-    100% {
-      transform: scale(1.9);
-      opacity: 0;
     }
   }
 
