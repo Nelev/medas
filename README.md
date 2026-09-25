@@ -213,7 +213,7 @@ The query side is [`agent/search.py`](medas-api/agent/search.py) — one functio
 
 ## Testing
 
-119 tests in medas-api, 36 in medas-ui.
+116 tests in medas-api, 36 in medas-ui.
 
 The agent is stubbed at one seam. `main.ask_agent` is what every test patches, so the model, the tool, the prompt and the vector store all stay out of the suite — otherwise it would be slow, billable, non-deterministic, and impossible in CI where none of them exist. The fake records the turns it was given, which is how the history tests assert on what the agent was actually told.
 
@@ -281,5 +281,4 @@ Then the smaller ones:
 - **Every page load waits on Clerk.** `greetingName()` calls `currentUser()`, a Clerk Backend API request, before the greeting is fetched — tens to hundreds of milliseconds on each render, for one string. A `firstName` claim on the session token would make it a local read, and would let the API resolve the name itself and drop the `user` parameter; it needs the claim added in the Clerk dashboard first.
 - **No idempotency.** A double-submitted first message creates two conversations.
 - **A submit before hydration is lost.** The composer uses an `onSubmit` handler rather than a form action, so a submission made before React hydrates navigates to `/?message=…` and the message is dropped. React queues submissions for a `<form action={…}>`; a plain handler cannot.
-- **Dead code left by the move to the agent.** In [`agent/patient.py`](medas-api/agent/patient.py) only `record_id` is still called (by `/ask`); `patient_block`, `record_block` and `UnknownPatient` have no callers — they held the check that a record belongs to the user asking, which the runtime-context record id now makes unnecessary. `NewConversation` and `MessageRequest` in `schema/schema.py` are unreferenced outside their own tests.
 - **pgvector is not installed.** Embeddings live in Chroma; moving them into Postgres needs a source build on Windows.
