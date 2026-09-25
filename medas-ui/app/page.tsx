@@ -6,10 +6,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { auth } from "@clerk/nextjs/server"
 
 import { init } from "@/api/init"
-
-// Hardcoded until there is a session to read it from. One constant so there
-// is a single place to change when auth lands.
-const USER = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
+import { greetingName } from "@/api/session"
 
 // An async Server Component: the request to medas-api happens on the server,
 // so there is no CORS preflight and no empty-list flash on first paint.
@@ -21,7 +18,7 @@ export default async function Home() {
   // fetched per request rather than baked in at build time.
   await auth.protect()
 
-  const { messages } = await init(USER)
+  const { messages } = await init(await greetingName())
 
   return (
     // h-dvh rather than h-screen: dynamic viewport units account for mobile
@@ -35,7 +32,7 @@ export default async function Home() {
       <EcgTrace />
 
       <main className="border-border bg-card/85 relative z-10 flex h-full w-full max-w-3xl flex-col overflow-hidden backdrop-blur-md sm:rounded-[1.75rem] sm:border sm:panel-lit">
-        <ChatHeader patient={USER} />
+        <ChatHeader />
 
         {/* min-h-0 is load-bearing: without it this flex child refuses to
             shrink below its content height and the list never scrolls. */}

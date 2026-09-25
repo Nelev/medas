@@ -29,9 +29,8 @@ SERVER_VERSION = "18.0 (Debian 18.0-1)"
 USER_ID = uuid.UUID("7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0")
 NEW_MESSAGE = {"role": "user", "text": "What is my last episode?"}
 
-# Who the seeded greeting is addressed to. /ask passes a literal name rather
-# than resolving one for the signed-in user, so this is not the caller.
-SEEDED_NAME = "Mattia"
+# Who the seeded greeting is addressed to when /ask is not given a name.
+SEEDED_NAME = "there"
 
 # An arbitrary fixed instant for the stored rows. Fixed, so a timestamp
 # assertion fails for a real reason rather than a slow test.
@@ -158,19 +157,21 @@ async def test_root_greets_the_user(client):
     }
 
 
-async def test_root_requires_the_user_query_parameter(client):
-    # `user` is a bare str with no default, so FastAPI makes it a required
-    # query param. This pins that omitting it is a 422 and not a 500 -- and,
-    # now that the seed lives at /, that a bare GET / is not a valid request.
+async def test_root_without_a_name_greets_there(client):
+    # An account with no first name sends none, and the API alone decides
+    # what the greeting says then -- the same on / as on /ask.
     response = await client.get("/")
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    assert response.json()["messages"][0]["text"] == (
+        f"Hi {SEEDED_NAME}, how can I help you?"
+    )
 
 
 async def test_root_interpolates_the_user_verbatim(client):
-    # The UI sends an opaque patient id rather than a display name, and
-    # percent-encodes it on the way out. This pins that it survives the round
-    # trip intact instead of arriving mangled into the greeting.
+    # The UI percent-encodes the name on the way out, and it is whatever the
+    # account holds. This pins that it survives the round trip intact instead
+    # of arriving mangled into the greeting.
     user = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 
     response = await client.get("/", params={"user": user})
@@ -506,23 +507,37 @@ async def test_the_first_turn_is_answered_knowing_the_greeting(
     ]
 
 
-async def test_seeded_greeting_ignores_the_caller(client, fake_session):
-    # / greets whoever asks; start_conversation greets a hardcoded name. So
-    # the greeting the UI previews and the one stored under it differ, and
-    # the user sees it change the moment they send. Pinned as it behaves --
-    # this becomes an equality check once the name is resolved from userId.
-    user = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
+async def test_seeded_greeting_is_the_one_previewed(client, fake_session):
+    # The UI sends the same name to / and to the /ask that starts the thread,
+    # so the greeting stored is the one the patient was already looking at --
+    # it does not change under them the moment they send.
+    previewed = await client.get("/", params={"user": "Ada"})
+    created = await client.post("/ask", params={"user": "Ada"}, json=NEW_MESSAGE)
 
-    previewed = await client.get("/", params={"user": user})
-    created = await client.post("/ask", json=NEW_MESSAGE)
+    stored = created.json()["messages"][0]
+    preview = previewed.json()["messages"][0]
+    assert (stored["role"], stored["text"]) == (preview["role"], preview["text"])
+    assert stored["text"] == "Hi Ada, how can I help you?"
 
-    assert (
-        created.json()["messages"][0]["text"]
-        == f"Hi {SEEDED_NAME}, how can I help you?"
+
+@pytest.mark.parametrize(
+    ("method", "path"), [("GET", "/"), ("POST", "/ask")], ids=["root", "ask"]
+)
+@pytest.mark.parametrize(
+    "user",
+    [pytest.param("", id="empty"), pytest.param("x" * 201, id="too-long")],
+)
+async def test_both_greetings_reject_an_unusable_name(
+    client, fake_session, method, path, user
+):
+    # One rule on both routes, so a name the preview takes is one the first
+    # /ask takes too.
+    response = await client.request(
+        method, path, params={"user": user}, json=NEW_MESSAGE
     )
-    assert (
-        created.json()["messages"][0]["text"] != previewed.json()["messages"][0]["text"]
-    )
+
+    assert response.status_code == 422
+    assert fake_session.statements == []
 
 
 async def test_ask_without_an_id_for_an_unknown_user_is_404(client, fake_session):
@@ -613,12 +628,20 @@ async def test_the_agent_searches_the_signed_in_users_record(
     assert stub_the_agent.record_ids == [f"pat_{USER_ID}"]
 
 
-async def test_ask_takes_the_owner_from_the_session_not_the_query(client, fake_session):
-    # The old contract, sent anyway: a userId in the query is ignored rather
-    # than trusted, so it cannot be used to write as someone else.
-    someone_else = uuid.uuid4()
-
-    await client.post("/ask", params={"userId": someone_else}, json=NEW_MESSAGE)
+@pytest.mark.parametrize(
+    "params",
+    [
+        # The old contract, sent anyway: ignored rather than trusted.
+        pytest.param({"userId": uuid.uuid4()}, id="userId"),
+        # A greeting name that looks like an id changes only the words.
+        pytest.param({"user": f"pat_{uuid.uuid4()}"}, id="user"),
+    ],
+)
+async def test_ask_takes_the_owner_from_the_session_not_the_query(
+    client, fake_session, params
+):
+    # Nothing in the query can be used to write as someone else.
+    await client.post("/ask", params=params, json=NEW_MESSAGE)
 
     owners = [p["user_id"] for p in fake_session.parameters if p and "user_id" in p]
     assert owners

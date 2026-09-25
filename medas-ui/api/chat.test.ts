@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { auth } from "@clerk/nextjs/server"
+import { currentUser } from "@clerk/nextjs/server"
 
 import { ask } from "@/api/chat"
+import { named, requestFrom, signInAs, stubFetch, TOKEN } from "@/test/api"
 import {
   askedTurns,
   CONVERSATION_ID,
@@ -13,38 +14,12 @@ import {
 } from "@/test/fixtures"
 
 // The session is Clerk's to read, so it is mocked; each test starts signed in.
-vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }))
-
-const TOKEN = "session.jwt.token"
-
-// Signed out is a null token: that is all api/session.ts reads.
-const signInAs = (token: string | null = TOKEN) =>
-  vi.mocked(auth).mockResolvedValue({
-    getToken: async () => token,
-  } as unknown as Awaited<ReturnType<typeof auth>>)
+vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn(), currentUser: vi.fn() }))
 
 beforeEach(() => {
   signInAs()
+  named("Ada")
 })
-
-// globalThis.fetch is stubbed rather than the module mocked: the URL building
-// and the response mapping are the things under test, and mocking the module
-// would skip both.
-const stubFetch = (response: Response | Promise<never>) => {
-  const fetchMock = vi.fn(() =>
-    response instanceof Promise ? response : Promise.resolve(response),
-  )
-
-  vi.stubGlobal("fetch", fetchMock)
-
-  return fetchMock
-}
-
-const requestFrom = (fetchMock: ReturnType<typeof vi.fn>) => {
-  const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-
-  return { url, init, body: JSON.parse(String(init.body)) }
-}
 
 describe("ask", () => {
   it("posts to /ask with the session token and the conversation", async () => {
@@ -76,6 +51,34 @@ describe("ask", () => {
     expect(searchParams.has("conversationId")).toBe(false)
     // Who is asking is the token's to say, never the URL's.
     expect(searchParams.has("userId")).toBe(false)
+  })
+
+  // With no first name there is no name to send, and the API decides what
+  // the greeting says -- the same as it does for the preview.
+  it.each([
+    ["Ada", "Ada"],
+    [null, null],
+  ])(
+    "names who the greeting addresses when it starts one (%s)",
+    async (firstName, sent) => {
+      named(firstName)
+      const fetchMock = stubFetch(jsonResponse(createdConversation, 201))
+
+      await ask({ role: "user", text: "Do I have any allergies?" })
+
+      expect(requestFrom(fetchMock).searchParams.get("user")).toBe(sent)
+    },
+  )
+
+  it("sends no name on a later turn, nor asks Clerk for one", async () => {
+    const fetchMock = stubFetch(jsonResponse(askedTurns, 201))
+
+    await ask({ role: "user", text: "And my medications?" }, CONVERSATION_ID)
+
+    const { searchParams } = new URL(requestFrom(fetchMock).url)
+
+    expect(searchParams.has("user")).toBe(false)
+    expect(currentUser).not.toHaveBeenCalled()
   })
 
   it("returns the whole opening when it started the conversation", async () => {

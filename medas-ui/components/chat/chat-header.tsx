@@ -3,13 +3,7 @@ import { Stethoscope } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 
-interface ChatHeaderProps {
-  // The record in view. Shown because a clinical tool that does not say whose
-  // chart is open is one wrong answer away from a real problem.
-  patient?: string
-}
-
-export function ChatHeader({ patient }: ChatHeaderProps) {
+export function ChatHeader() {
   return (
     <header className="bg-card/80 flex shrink-0 items-center gap-3 border-b px-4 py-3.5 backdrop-blur-sm sm:px-5">
       <div className="bg-primary text-primary-foreground shadow-primary/25 flex size-9.5 shrink-0 items-center justify-center rounded-[0.9rem] shadow-md">
@@ -26,20 +20,6 @@ export function ChatHeader({ patient }: ChatHeaderProps) {
           Personal medical assistant
         </p>
       </div>
-
-      {patient ? (
-        <span className="border-border bg-background/60 text-muted-foreground hidden items-center gap-2 rounded-full border py-1.5 pr-3 pl-2.5 font-mono text-[0.6875rem] sm:inline-flex">
-          {/* Not a decorative dot: it says the record is loaded and live, and
-              it is the only thing on screen that moves. */}
-          <span
-            className="bg-pulse pulse-dot relative size-1.5 rounded-full"
-            aria-hidden
-          />
-          <span className="text-foreground/75 max-w-[18ch] truncate">
-            {patient}
-          </span>
-        </span>
-      ) : null}
 
       {/* Signed out, the two ways in; signed in, the account menu. Clerk's
           buttons wrap ours, so they keep the interface's own look. */}

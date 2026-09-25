@@ -1,6 +1,6 @@
 "use server"
 
-import { authorization } from "@/api/session"
+import { authorization, greetingName } from "@/api/session"
 import { ChatMessageProps } from "@/model/ChatMessage"
 
 // Server Actions: the composer calls these from the browser, but the fetch
@@ -78,6 +78,15 @@ const ask = async (
 
   if (conversationId) {
     url.searchParams.set("conversationId", conversationId)
+  } else {
+    // Starting the thread seeds the greeting, so it gets the name the page
+    // previewed it with. Only here: a later turn has no use for it, and
+    // skipping it saves a call to Clerk on every message.
+    const name = await greetingName()
+
+    if (name) {
+      url.searchParams.set("user", name)
+    }
   }
 
   // The body is the message itself -- role and text at the top level.

@@ -9,10 +9,17 @@ interface InitResponse {
   messages: ChatMessageProps[]
 }
 
-const init = async (user: string): Promise<InitResponse> => {
-  const url = `${API_BASE_URL}/?user=${encodeURIComponent("Mattia")}`
+// `name` is who the greeting addresses; see greetingName in api/session.ts.
+const init = async (name?: string): Promise<InitResponse> => {
+  const url = new URL(`${API_BASE_URL}/`)
 
-  const response = await fetch(url, { headers: await authorization() })
+  if (name) {
+    url.searchParams.set("user", name)
+  }
+
+  const response = await fetch(url.toString(), {
+    headers: await authorization(),
+  })
 
   if (!response.ok) {
     throw new Error(`Failed to init profile (${response.status})`)

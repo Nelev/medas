@@ -6,7 +6,7 @@ const CONVERSATION_ID = "ba5aa00a-eaac-440f-826a-886354f9babf"
 
 const greeting = {
   role: "assistant" as const,
-  text: "Hi Mattia, how can I help you?",
+  text: "Hi Ada, how can I help you?",
   message_id: "9f1c0e6a-2d17-4a1e-8f2c-0b7d5a9e4c31",
   timestamp: "2026-09-18T09:47:11.120000+00:00",
 }
