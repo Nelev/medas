@@ -15,7 +15,7 @@ Every request to medas-api is made by the Next server. The browser only ever tal
 
 | Step          | Who calls                              | Call                                                            |
 | ------------- | -------------------------------------- | --------------------------------------------------------------- |
-| Page load     | The Next server, in a Server Component | `GET /?user=…` → the greeting, not persisted                    |
+| Page load     | The Next server, in a Server Component | `GET /[?user=…]` → the greeting, not persisted                  |
 | Every message | The Next server, in a Server Action    | `POST /ask[?conversationId=…]` → stores the turn and answers it |
 
 That is what keeps the API's origin out of the browser bundle, removes any need for CORS, and lets one build run in any environment.
@@ -25,6 +25,8 @@ Both steps need a signed-in user. [Clerk](https://clerk.com) handles the session
 Every call to medas-api carries the user's Clerk session token as `Authorization: Bearer …`, and the API takes who is asking from that token alone — never from the request. [`auth/session.py`](medas-api/auth/session.py) verifies it (signature, expiry, and that it was issued for this site) and resolves it to a `users` row: by `users.clerk_user_id` once linked, and on the first sign-in by matching the account's **verified** primary email to an unclaimed row, or, when no row has that email, by creating one. Without a verified email the account is refused with `403`, since the row needs one. Every conversation read and write is scoped to that user in the same SQL statement, so someone else's conversation is a `404`, exactly like one that does not exist. Only `/health/db` is public.
 
 One endpoint answers every message. `conversationId` is optional: without it the API starts a conversation and seeds the greeting, with it the message is appended to that thread. A caller that has just opened the app does not have to know which case it is in, so the composer has no branch — it passes whatever id it holds, which is empty on the first send. The id comes back in the response and lives in a client-side store.
+
+The greeting addresses the signed-in user by their Clerk first name. [`greetingName()`](medas-ui/api/session.ts) reads it on the Next server, and the same name goes to `GET /` for the preview and to the `POST /ask` that starts a conversation, so the greeting stored is the one the patient already saw. An account with no first name sends none, and the API greets "Hi there".
 
 Nothing is read back: the UI keeps the history it was given, so a reload starts from the greeting again.
 
@@ -188,7 +190,7 @@ Messages started out as a `jsonb` array on the conversation row. That shape retu
 
 Ordering is `seq`, a **global** identity column, not a timestamp and not a per-conversation counter. `created_at` defaults to `clock_timestamp()` so it is distinct per row, but a counter still beats it: a counter cannot run backwards when the clock is stepped, and it is a stable pagination cursor — "everything after `seq` N" stays correct where "everything after instant T" can skip a row written a microsecond earlier by a slower transaction. A per-conversation `MAX(seq) + 1` would need a lock on the conversation row — putting back the serialisation this table removes — or a retry loop on the unique violation. A global counter leaves gaps between conversations, and the gaps mean nothing.
 
-Every write — one appended message or the pair a new conversation is seeded with — goes through one statement: `INSERT ... SELECT ... FROM conversations WHERE ... AND NOT deleted`, fed from parallel arrays so the SQL text is fixed for any number of messages. The `SELECT` is the existence check, so it happens in the statement that writes rather than in one before it: no window between deciding to write and writing, and no rows selected means no rows inserted, which is how the caller learns the conversation was unknown or deleted. One `WHERE` clause for every write path is also the one place an ownership check belongs once there is a session to read the user from.
+Every write — one appended message or the pair a new conversation is seeded with — goes through one statement: `INSERT ... SELECT ... FROM conversations WHERE ... AND NOT deleted`, fed from parallel arrays so the SQL text is fixed for any number of messages. The `SELECT` is the existence check, so it happens in the statement that writes rather than in one before it: no window between deciding to write and writing, and no rows selected means no rows inserted, which is how the caller learns the conversation was unknown or deleted. The same `WHERE` clause carries the ownership check — `c.user_id` is the signed-in user — so a conversation that is not the caller's matches nothing, exactly like one that does not exist.
 
 `conversations.updated_at` is gone, renamed to `created_at`. It was only ever bumped because an append rewrote that row; appending now writes to `messages` alone, and bumping a column on the conversation would mean taking the lock this change exists to avoid. Last activity is `MAX(messages.created_at)`.
 
@@ -211,7 +213,7 @@ The query side is [`agent/search.py`](medas-api/agent/search.py) — one functio
 
 ## Testing
 
-114 tests in medas-api, 30 in medas-ui.
+119 tests in medas-api, 36 in medas-ui.
 
 The agent is stubbed at one seam. `main.ask_agent` is what every test patches, so the model, the tool, the prompt and the vector store all stay out of the suite — otherwise it would be slow, billable, non-deterministic, and impossible in CI where none of them exist. The fake records the turns it was given, which is how the history tests assert on what the agent was actually told.
 
@@ -219,7 +221,8 @@ Auth is split the same way. Route tests override `current_user`, so they run as 
 
 On the frontend:
 
-- [`medas-ui/api/chat.test.ts`](medas-ui/api/chat.test.ts) stubs `globalThis.fetch` rather than mocking the module, so URL building and response mapping actually run — every bug this file has had lived in exactly those two places. The Clerk session is mocked: the token goes out as a bearer header and never as a URL parameter, and `ask` refuses a signed-out caller before it reaches the API.
+- [`medas-ui/api/chat.test.ts`](medas-ui/api/chat.test.ts) stubs `globalThis.fetch` rather than mocking the module, so URL building and response mapping actually run — every bug this file has had lived in exactly those two places. The Clerk session is mocked: the token goes out as a bearer header and never as a URL parameter, and `ask` refuses a signed-out caller before it reaches the API. It also covers when the greeting name is sent: on the first message only, and not at all without a first name.
+- [`medas-ui/api/init.test.ts`](medas-ui/api/init.test.ts) covers the page-load call the same way: the name in `?user=`, left off when there is none, and a refused request thrown rather than rendered. Both files share the Clerk and `fetch` stubs in [`medas-ui/test/api.ts`](medas-ui/test/api.ts).
 - [`medas-ui/components/chat/chat-composer.test.tsx`](medas-ui/components/chat/chat-composer.test.tsx) mocks the API client instead, and covers what the composer sends, what it does with the answer, and what it shows when a send fails. An `ask` held open by the test covers the wait in between: the message shown before the reply, handed over to its stored copy once, and no second send until then.
 - [`medas-ui/components/chat/chat-messages.test.tsx`](medas-ui/components/chat/chat-messages.test.tsx) covers the list around that wait — the typing indicator up only while a message is pending, the greeting kept in view, and a scroll to the bottom when it grows. jsdom has no layout, so `scrollIntoView` and `matchMedia` are stubbed and the test asserts the call, not the scroll.
 
@@ -229,10 +232,10 @@ Two tests pin trade-offs rather than defects. The field is cleared optimisticall
 
 ## CI
 
-| Workflow                               | Runs on        | Steps                                 |
-| -------------------------------------- | -------------- | ------------------------------------- |
-| [`api.yml`](.github/workflows/api.yml) | `medas-api/**` | lint, format check, pytest            |
-| [`ui.yml`](.github/workflows/ui.yml)   | `medas-ui/**`  | lint, typegen, typecheck, test, build |
+| Workflow                               | Runs on        | Steps                                               |
+| -------------------------------------- | -------------- | --------------------------------------------------- |
+| [`api.yml`](.github/workflows/api.yml) | `medas-api/**` | lint, format check, pytest                          |
+| [`ui.yml`](.github/workflows/ui.yml)   | `medas-ui/**`  | lint, format check, typegen, typecheck, test, build |
 
 One step in `ui.yml` exists for a non-obvious reason: **`next typegen`** before the typecheck. `LayoutProps` and friends are generated under `.next`, which a fresh checkout does not have, so `tsc` alone fails on `app/layout.tsx` and nothing else.
 
@@ -275,7 +278,8 @@ Safety and correctness first, because these are the ones that matter if this eve
 Then the smaller ones:
 
 - **No history on reload.** `GET /conversations/{id}` exists, but nothing calls it: the UI keeps the history it was given in memory, so a refresh returns to the greeting with the stored conversation orphaned.
+- **Every page load waits on Clerk.** `greetingName()` calls `currentUser()`, a Clerk Backend API request, before the greeting is fetched — tens to hundreds of milliseconds on each render, for one string. A `firstName` claim on the session token would make it a local read, and would let the API resolve the name itself and drop the `user` parameter; it needs the claim added in the Clerk dashboard first.
 - **No idempotency.** A double-submitted first message creates two conversations.
 - **A submit before hydration is lost.** The composer uses an `onSubmit` handler rather than a form action, so a submission made before React hydrates navigates to `/?message=…` and the message is dropped. React queues submissions for a `<form action={…}>`; a plain handler cannot.
-- **Dead code left by the move to the agent.** [`agent/patient.py`](medas-api/agent/patient.py) — `patient_block`, `record_block`, `record_id`, `UnknownPatient` — has no callers at all; it held the check that a record belongs to the user asking, which nothing performs now. `NewConversation` in `schema/schema.py` is likewise unreferenced.
+- **Dead code left by the move to the agent.** In [`agent/patient.py`](medas-api/agent/patient.py) only `record_id` is still called (by `/ask`); `patient_block`, `record_block` and `UnknownPatient` have no callers — they held the check that a record belongs to the user asking, which the runtime-context record id now makes unnecessary. `NewConversation` and `MessageRequest` in `schema/schema.py` are unreferenced outside their own tests.
 - **pgvector is not installed.** Embeddings live in Chroma; moving them into Postgres needs a source build on Windows.
