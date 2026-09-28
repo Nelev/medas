@@ -25,11 +25,11 @@ from langchain_openai import ChatOpenAI
 
 from agent.assistant_general_prompt import ASSISTANT_SYSTEM_PROMPT
 from agent.search import search_record
+from utils import OPENROUTER_BASE_URL
 
 load_dotenv()
 
 MODEL_NAME = "openai/gpt-4o-mini"
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 @dataclass(frozen=True)

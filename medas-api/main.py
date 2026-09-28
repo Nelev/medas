@@ -1,4 +1,3 @@
-import json
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -22,6 +21,7 @@ from model import (
     list_messages,
 )
 from schema import NewMessage
+from utils import messages_as_turns, parse_agent_reply
 
 # No model client is built here: the agent reads OPENROUTER_API_KEY from the
 # environment when its graph is built, on the first request that needs it.
@@ -60,19 +60,6 @@ def init_user_profile(_: CurrentUser, name: GreetingName):
     return {"messages": [{"role": "assistant", "text": greeting_text(name)}]}
 
 
-def _as_turns(messages: list[dict], question: str) -> list[dict]:
-    """The stored turns and the new question, as a chat model takes them.
-
-    The wire calls the field `text`; a chat model calls it `content`. Roles
-    are already "user" and "assistant" on both sides. No system turn: the
-    prompt belongs to the agent, and a second copy would be sent twice.
-    """
-    return [
-        *({"role": m["role"], "content": m["text"]} for m in messages),
-        {"role": "user", "content": question},
-    ]
-
-
 async def _answer_and_store(
     session: AsyncSession,
     conversation_id: uuid.UUID,
@@ -83,30 +70,11 @@ async def _answer_and_store(
 
     Both paths through /ask end here, so the opening turn of a conversation
     and every later one are answered on the same terms.
-
-    The prompt asks for one JSON object, so the reply is read as one: the
-    patient sees `message`, and the triage code travels with the turn as
-    metadata because which code was given, and when, is what an audit asks
-    about later.
     """
     # The record searched is the signed-in user's, by the pat_{users.id}
     # convention agent/patient.py owns.
     reply = await ask_agent(turns, record_id=record_id(user_id))
-
-    try:
-        answer = json.loads(reply)
-        reply_text = answer["message"]
-        extra = {
-            "severity": answer.get("severity"),
-            "confidence": answer.get("confidence"),
-        }
-    except json.JSONDecodeError, KeyError, TypeError:
-        # Prose where an object was asked for. The model does this on its own
-        # judgement -- most often on a red flag, where it drops the format and
-        # writes the warning out directly. That reply is a good answer, so it
-        # is shown as it stands; only the triage code is lost with it.
-        reply_text = reply
-        extra = {}
+    reply_text, extra = parse_agent_reply(reply)
 
     return await append_message(
         session,
@@ -166,7 +134,7 @@ async def ask(
         # `written` is the greeting and the question, in that order, so
         # written[:-1] is everything the patient has seen before the question
         # being answered.
-        turns = _as_turns(written[:-1], message.text)
+        turns = messages_as_turns(written[:-1], message.text)
     else:
         conversation_id = conversationId
 
@@ -181,7 +149,7 @@ async def ask(
         if not stored_messages:
             raise HTTPException(status_code=404, detail="Conversation not found")
 
-        turns = _as_turns(stored_messages, message.text)
+        turns = messages_as_turns(stored_messages, message.text)
 
         sent = await append_message(
             session, conversation_id, message.role, message.text, user_id=user_id
