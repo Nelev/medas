@@ -17,7 +17,7 @@ import httpx
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-import main
+import controller.conversation
 from auth import current_user, greeting_name
 from database.database import get_session
 from main import app
@@ -208,7 +208,7 @@ def stub_the_agent(monkeypatch):
         calls.record_ids.append(record_id)
         return AGENT_REPLY
 
-    monkeypatch.setattr(main, "ask_agent", _answer)
+    monkeypatch.setattr(controller.conversation, "ask_agent", _answer)
 
     return calls
 
@@ -232,7 +232,7 @@ async def test_a_json_reply_is_read_for_its_message_and_triage_code(
             }
         )
 
-    monkeypatch.setattr(main, "ask_agent", _json_answer)
+    monkeypatch.setattr(controller.conversation, "ask_agent", _json_answer)
     fake_session._store("assistant", "Hi Mattia, how can I help you?")
 
     response = await client.post(

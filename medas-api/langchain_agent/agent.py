@@ -8,8 +8,9 @@ As a module, not a file: run as a file, this module's own name shadows the
 `agent` package it imports search_record from.
 
 The caller passes the whole conversation -- the stored turns and the new
-question -- and gets back the model's reply as text. No schema, no memory of
-its own, nothing it does not need to do that.
+question -- and gets back the model's reply as text: a JSON object, as the
+prompt asks for, which the caller reads with utils.parse_agent_reply. No
+memory of its own, nothing it does not need to do that.
 """
 
 import asyncio
