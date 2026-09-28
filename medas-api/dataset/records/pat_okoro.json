@@ -1,0 +1,36 @@
+{
+  "id": "pat_c41d7a09-2e6b-4f88-9d3a-71b5e0c2f4d6",
+  "name": "Adaeze Okoro-Lindqvist",
+  "dob": "1994-02-29",
+  "sex": "female",
+  "episodes": [
+    {
+      "episode_id": "ep_01",
+      "date": "2026-04-20",
+      "type": "antenatal_booking",
+      "setting": "community_midwifery",
+      "description": "Antenatal booking at 10+2 weeks, first pregnancy (G1P0). Booking blood pressure 112/70 mmHg, BMI 23. Blood group O RhD negative; offered anti-D prophylaxis at 28 weeks. Estimated due date 2026-11-07."
+    }
+  ],
+  "allergies": [
+    {
+      "substance": "No known drug allergies",
+      "type": "none_recorded",
+      "reaction": "None",
+      "severity": "none",
+      "status": "confirmed_absent",
+      "onset_date": "2026-04-20"
+    }
+  ],
+  "current_medication": [
+    {
+      "name": "Folic acid",
+      "strength": "400 µg",
+      "form": "tablet",
+      "dose": "400 µg once daily until 12 weeks",
+      "indication": "Neural tube defect prevention in pregnancy",
+      "started": "2026-02-10"
+    }
+  ],
+  "pathologies": []
+}

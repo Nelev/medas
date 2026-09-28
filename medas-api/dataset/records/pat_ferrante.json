@@ -1,0 +1,88 @@
+{
+  "id": "pat_2b8e6d14-9a3f-4c51-b7e2-5d0c8f1a6e93",
+  "name": "Giulia Ferrante",
+  "dob": "1952-11-23",
+  "sex": "female",
+  "episodes": [
+    {
+      "episode_id": "ep_01",
+      "date": "2009-04-14",
+      "type": "adverse_drug_reaction",
+      "setting": "emergency_department",
+      "description": "Anaphylaxis within 10 minutes of oral amoxicillin prescribed for a dental abscess: generalised urticaria, lip and tongue swelling, hypotension 78/40 mmHg. Treated with intramuscular adrenaline 0.5 mg, IV fluids, chlorphenamine and hydrocortisone. Observed for 12 hours; penicillin allergy recorded as severe."
+    },
+    {
+      "episode_id": "ep_02",
+      "date": "2017-02-06",
+      "type": "diagnosis",
+      "setting": "primary_care",
+      "description": "Irregularly irregular pulse found at a routine blood pressure check; ECG confirmed atrial fibrillation with ventricular rate 104 bpm. CHA2DS2-VASc score 4 (age, sex, hypertension, diabetes). Started on apixaban and bisoprolol."
+    },
+    {
+      "episode_id": "ep_03",
+      "date": "2024-08-30",
+      "type": "investigation",
+      "setting": "primary_care",
+      "description": "Annual chronic disease review: eGFR 48 mL/min/1.73m2 (stable CKD stage G3a), HbA1c 54 mmol/mol, blood pressure 138/82 mmHg. Apixaban dose criteria reviewed and standard dose continued."
+    }
+  ],
+  "allergies": [
+    {
+      "substance": "Penicillins (amoxicillin)",
+      "type": "drug_hypersensitivity",
+      "reaction": "Anaphylaxis: urticaria, angioedema, hypotension",
+      "severity": "severe",
+      "status": "active_confirmed",
+      "onset_date": "2009-04-14"
+    }
+  ],
+  "current_medication": [
+    {
+      "name": "Apixaban",
+      "strength": "5 mg",
+      "form": "tablet",
+      "dose": "5 mg twice daily",
+      "indication": "Stroke prevention in non-valvular atrial fibrillation",
+      "started": "2017-02-06"
+    },
+    {
+      "name": "Bisoprolol",
+      "strength": "2.5 mg",
+      "form": "tablet",
+      "dose": "2.5 mg once daily",
+      "indication": "Rate control of atrial fibrillation",
+      "started": "2017-02-06"
+    },
+    {
+      "name": "Metformin",
+      "strength": "500 mg",
+      "form": "modified-release tablet",
+      "dose": "1 g once daily with the evening meal",
+      "indication": "Type 2 diabetes mellitus",
+      "started": "2012-09-18"
+    }
+  ],
+  "pathologies": [
+    {
+      "condition": "Atrial fibrillation, permanent",
+      "icd10": "I48.21",
+      "status": "active",
+      "diagnosed": "2017-02-06",
+      "notes": "Anticoagulated with apixaban; rate controlled."
+    },
+    {
+      "condition": "Type 2 diabetes mellitus",
+      "icd10": "E11.9",
+      "status": "active",
+      "diagnosed": "2012-09-18",
+      "notes": "Diet and metformin; no retinopathy at last screening."
+    },
+    {
+      "condition": "Chronic kidney disease, stage G3a",
+      "icd10": "N18.31",
+      "status": "active",
+      "diagnosed": "2021-03-02",
+      "notes": "Stable eGFR 45-50; relevant to drug dosing."
+    }
+  ]
+}

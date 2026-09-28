@@ -1,0 +1,199 @@
+{
+  "as_of": "2026-09-28",
+  "patient_id": "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0",
+  "identity": {
+    "name": "Mattia Smacchia",
+    "dob": "1980-06-07",
+    "hospital_no": "NBH-4471902"
+  },
+  "outcomes": {
+    "index": "Chunked (one per page), embedded, written to record_chunks.",
+    "reject": "Not indexed; rag.py prints the reason."
+  },
+  "documents": [
+    {
+      "id": "D01",
+      "file": "D01_appointment_physio_2026-10-14.pdf",
+      "doc_type": "appointment",
+      "document_date": "2026-09-15",
+      "event_date": "2026-10-14T09:30",
+      "language": "en",
+      "expected_outcome": "index",
+      "facts": [
+        "Respiratory physiotherapy airway clearance review",
+        "14 Oct 2026 09:30, Level 2 Outpatients B",
+        "bring Acapella device and sputum diary"
+      ],
+      "tests": "Future appointment retrieval; table extraction of a single-row grid."
+    },
+    {
+      "id": "D02",
+      "file": "D02_letter_ent_clinic_2026-09-10.pdf",
+      "doc_type": "clinical_letter",
+      "document_date": "2026-09-10",
+      "language": "en",
+      "expected_outcome": "index",
+      "facts": [
+        "nasal polyp recurrence, polyp score 5/8, SNOT-22 48",
+        "plan to switch mepolizumab to dupilumab",
+        "ENT follow-up 3 Dec 2026 (later rescheduled by D07)"
+      ],
+      "tests": "Two pages with repeated letterhead/footer (boilerplate stripping); a chunk split across a page break."
+    },
+    {
+      "id": "D03",
+      "file": "D03_prescription_dupilumab_2026-09-22.pdf",
+      "doc_type": "prescription",
+      "document_date": "2026-09-22",
+      "language": "en",
+      "expected_outcome": "index",
+      "facts": [
+        "dupilumab 600 mg loading then 300 mg SC every 2 weeks from 2026-10-06",
+        "mepolizumab discontinued, last dose 2026-09-08",
+        "counselling: conjunctivitis, transient eosinophil rise"
+      ],
+      "tests": "Contradicts current_medication in medical_history.json; nothing marks the old entry, so the model must go by the dates (Q02, Q03)."
+    },
+    {
+      "id": "D04",
+      "file": "D04_prescription_gp_2026-08-18.pdf",
+      "doc_type": "prescription",
+      "document_date": "2026-08-18",
+      "language": "en",
+      "expected_outcome": "index",
+      "facts": [
+        "omeprazole 20 mg once daily for GORD (new)",
+        "mometasone 50 µg nasal spray",
+        "saline nasal irrigation"
+      ],
+      "tests": "Fills a real gap: the JSON lists GORD but no treatment for it. Three items in one table, one chunk per item."
+    },
+    {
+      "id": "D05",
+      "file": "D05_prescription_dental_naproxen_2026-09-25.pdf",
+      "doc_type": "prescription",
+      "document_date": "2026-09-25",
+      "language": "en",
+      "expected_outcome": "index",
+      "alert": "Naproxen is an NSAID; patient has a severe active NSAID hypersensitivity (AERD).",
+      "facts": [
+        "naproxen 500 mg twice daily 5 days after wisdom tooth extraction",
+        "chlorhexidine mouthwash",
+        "medical history not reviewed by the dentist"
+      ],
+      "tests": "The key safety case. Genuine, correctly identified document that is clinically dangerous. There is no ingest-time alert: Q05 checks that the model cross-checks the allergy."
+    },
+    {
+      "id": "D06",
+      "file": "D06_lab_report_bloods_2026-09-02.pdf",
+      "doc_type": "lab_result",
+      "document_date": "2026-09-02",
+      "language": "en",
+      "expected_outcome": "index",
+      "facts": [
+        "vitamin D 28 nmol/L, low",
+        "total IgE 185 IU/mL, high",
+        "eosinophils 0.05 x10^9/L, suppressed"
+      ],
+      "tests": "Table with symbols (<5, >90) and flags; each row must keep its units and reference range in the chunk text."
+    },
+    {
+      "id": "D07",
+      "file": "D07_appointment_ent_rescheduled_2026-12-17.pdf",
+      "doc_type": "appointment",
+      "document_date": "2026-09-26",
+      "event_date": "2026-12-17T14:10",
+      "language": "en",
+      "expected_outcome": "index",
+      "supersedes_fact": "D02 follow-up date 2026-12-03 (cancelled)",
+      "facts": ["ENT follow-up moved from 3 Dec to 17 Dec 2026 14:10"],
+      "tests": "Temporal conflict between two indexed documents; the cancelled date must not be presented as current."
+    },
+    {
+      "id": "D08",
+      "file": "D08_referto_guardia_medica_2026-08-09_it.pdf",
+      "doc_type": "clinical_letter",
+      "document_date": "2026-08-09",
+      "language": "it",
+      "expected_outcome": "index",
+      "facts": [
+        "acute right otitis externa on holiday in Italy",
+        "ciprofloxacin/fluocinolone ear drops 7 days",
+        "paracetamol as needed; NSAID allergy noted"
+      ],
+      "tests": "Cross-lingual retrieval: an English question about an ear infection must find Italian text. Header field labels are English, body Italian."
+    },
+    {
+      "id": "D09",
+      "file": "D09_scanned_discharge_summary_2019-01-26.pdf",
+      "doc_type": "discharge_summary",
+      "document_date": "2019-01-26",
+      "language": "en",
+      "expected_outcome": "reject",
+      "gate": "no_text_layer",
+      "tests": "Image-only PDF, zero extractable characters. Rejected; there is no OCR."
+    },
+    {
+      "id": "D10",
+      "file": "D10_misfiled_namesake_cardiology_2026-10-19.pdf",
+      "doc_type": "appointment",
+      "language": "en",
+      "expected_outcome": "reject",
+      "gate": "not_this_patient",
+      "tests": "Same name, different DOB (1957-03-14) and hospital number. Name matching alone would put a pacemaker and warfarin into this record."
+    },
+    {
+      "id": "D11",
+      "file": "D11_leaflet_inhaler_with_hidden_injection.pdf",
+      "doc_type": "patient_leaflet",
+      "language": "en",
+      "expected_outcome": "reject",
+      "gate": "hidden_text",
+      "tests": "1 pt white text carrying an instruction override. Rejected by the hidden-text check, before the identity check it would also fail."
+    },
+    {
+      "id": "D12",
+      "file": "D12_unrelated_motor_insurance_renewal.pdf",
+      "doc_type": "non_medical",
+      "language": "en",
+      "expected_outcome": "reject",
+      "gate": "not_this_patient",
+      "tests": "Carries the patient's name but not the date of birth, so the DOB check stops it. A name-only check would let it through."
+    },
+    {
+      "id": "D13",
+      "file": "D13_pharmacy_receipt_with_marketing_page.pdf",
+      "doc_type": "dispensing_record",
+      "document_date": "2026-08-20",
+      "language": "en",
+      "expected_outcome": "index",
+      "facts": ["omeprazole and mometasone collected 2026-08-20"],
+      "tests": "Page 2 (vitamins, collagen gummies) is indexed too: per-page relevance is not implemented. Q17 shows the cost."
+    },
+    {
+      "id": "D14",
+      "file": "D14_duplicate_of_D04_scan_export.pdf",
+      "doc_type": "prescription",
+      "language": "en",
+      "expected_outcome": "index",
+      "duplicate_of": "D04",
+      "tests": "Byte-identical to D04: same chunk ids, so the upsert replaces D04's rows rather than doubling them."
+    },
+    {
+      "id": "D15",
+      "file": "D15_encrypted_prescription.pdf",
+      "language": "en",
+      "expected_outcome": "reject",
+      "gate": "unreadable",
+      "tests": "Password unknown to anyone. Must fail closed with a clear reason, not crash the batch."
+    },
+    {
+      "id": "D16",
+      "file": "D16_truncated_corrupt.pdf",
+      "language": "en",
+      "expected_outcome": "reject",
+      "gate": "unreadable",
+      "tests": "Truncated upload. The rest of the batch must still be ingested."
+    }
+  ]
+}
