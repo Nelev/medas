@@ -16,6 +16,10 @@
 *.swp
 *~
 
+# Claude Code's per-user settings. Shared config in .claude/ (launch.json)
+# stays visible.
+.claude/settings.local.json
+
 # OS metadata. Desktop.ini and Thumbs.db come from Windows Explorer, .DS_Store
 # from Finder - either can land in any directory.
 .DS_Store
