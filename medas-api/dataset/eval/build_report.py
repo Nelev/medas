@@ -1,11 +1,15 @@
 """Score results.json against the fixed rubric, as a workbook:
 
-    uv run --with openpyxl python dataset/eval/build_report.py
+    uv run --with openpyxl python -m dataset.eval.build_report
 
 No model calls. The measurements (severity given, citations matched, facts
 judged present) are written as values; every score is an Excel formula over
 them and over the points on the Rubric sheet, so changing a point value there
 rescores the whole run.
+
+The RAG metrics (faithfulness, answer relevancy, context precision and recall,
+from rag_metrics.py) get a sheet of their own. They are diagnostics, 0-1, and
+stay out of the rubric: a pass is still decided by what the patient is told.
 """
 
 import json
@@ -14,9 +18,11 @@ from datetime import date
 from pathlib import Path
 
 from openpyxl import Workbook
-from openpyxl.formatting.rule import CellIsRule
+from openpyxl.formatting.rule import CellIsRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+
+from dataset.eval.common import sources_hit
 
 HERE = Path(__file__).parent
 OUT = HERE / f"eval_report_{date.today():%Y-%m-%d}.xlsx"
@@ -89,9 +95,11 @@ def _widths(ws, widths: list[int]) -> None:
 
 
 def _fill_when(ws, cells: str, rules: list[tuple[str, str, PatternFill]]) -> None:
+    """Colour `cells` by the first of `rules` that matches, in order."""
     for operator, value, fill in rules:
         ws.conditional_formatting.add(
-            cells, CellIsRule(operator=operator, formula=[value], fill=fill)
+            cells,
+            CellIsRule(operator=operator, formula=[value], fill=fill, stopIfTrue=True),
         )
 
 
@@ -118,8 +126,7 @@ def _measure(r: dict) -> dict:
     given = reply.get("severity", "") if contract == "valid" else ""
 
     cites = reply.get("citations") if isinstance(reply.get("citations"), list) else []
-    returned = set(r.get("returned_ids", []))
-    tails = [c.split(":", 1)[1] if c.startswith("pat_") else c for c in cites]
+    returned = {p["chunk_id"] for p in r.get("contexts", [])}
     required = r.get("cite_prefixes", [])
 
     j = r.get("judgement", {})
@@ -127,7 +134,7 @@ def _measure(r: dict) -> dict:
         "contract": contract,
         "given": given,
         "cites_required": len(required),
-        "cites_hit": sum(any(t.startswith(p) for t in tails) for p in required),
+        "cites_hit": sources_hit(cites, required),
         "invented": sum(c not in returned for c in cites),
         "facts_required": len(r.get("must_say", [])),
         "facts_present": sum(bool(x.get("present")) for x in j.get("required", [])),
@@ -268,8 +275,93 @@ def responses_sheet(wb: Workbook, rows: list[tuple[dict, dict]]) -> None:
     _widths(ws, [7, 36, 70, 11, 30, 34, 36, 36, 30, 40, 36])
 
 
+# (key in the result's "rag", column header, what a low score means), in the
+# order they appear on the RAG sheet, columns E onwards.
+RAG_METRICS = [
+    ("faithfulness", "Faithfulness", "Hallucination: record claims no passage supports"),
+    ("answer_relevancy", "Answer relevancy", "Off-topic or evasive answers"),
+    ("context_precision", "Context precision", "Irrelevant passages, or relevant ones ranked low"),
+    ("context_recall", "Context recall", "Facts the answer needs that retrieval missed"),
+    ("id_precision", "Precision (ids)", "As context precision, with must_cite as the labels"),
+    ("id_recall", "Recall (ids)", "Required sources no search returned"),
+]  # fmt: skip
+RAG_COL0 = 5
+
+
+def _rag_notes(rag: dict) -> list[str]:
+    """The verdicts behind the scores, as text for the reader."""
+    record = [c for c in rag.get("claims", []) if c.get("kind") == "record"]
+    unsupported = [c["claim"] for c in record if not c.get("supported")]
+    useful = rag.get("useful", [])
+    ranks = ", ".join(str(i) for i, u in enumerate(useful, start=1) if u)
+    missed = [
+        f["fact"]
+        for f in rag.get("facts", [])
+        if f.get("kind") == "record" and not f.get("attributed")
+    ]
+    return [
+        f"{len(record) - len(unsupported)} of {len(record)}",
+        "\n".join(unsupported),
+        f"{ranks} of {len(useful)}" if useful else "",
+        "\n".join(missed),
+        "yes" if rag.get("noncommittal") else "",
+        "\n".join(rag.get("generated_questions", [])),
+        rag.get("error", ""),
+    ]
+
+
+def rag_sheet(wb: Workbook, rows: list[tuple[dict, dict]]) -> int:
+    ws = wb.create_sheet("RAG metrics")
+    _header(ws, 1, [
+        "ID", "Category", "Answerable", "Passages",
+        *(label for _, label, _ in RAG_METRICS),
+        "Record claims supported", "Unsupported claims", "Useful passages (rank)",
+        "Facts not retrieved", "Non-committal", "Questions the answer implies", "Error",
+    ])  # fmt: skip
+    for i, (r, _) in enumerate(rows, start=2):
+        rag = r.get("rag") or {}
+        _row(ws, i, [
+            r["id"], r["category"], "yes" if rag.get("answerable") else "", rag.get("passages", ""),
+        ])  # fmt: skip
+        # None stays an empty cell, which AVERAGE and COUNT skip.
+        _row(
+            ws,
+            i,
+            [rag.get(key) for key, _, _ in RAG_METRICS],
+            start=RAG_COL0,
+            font=INPUT,
+            align=CENTER,
+        )
+        for col in range(RAG_COL0, RAG_COL0 + len(RAG_METRICS)):
+            ws.cell(row=i, column=col).number_format = "0.00"
+        _row(ws, i, _rag_notes(rag), start=RAG_COL0 + len(RAG_METRICS))
+
+    last = len(rows) + 1
+    first_col = get_column_letter(RAG_COL0)
+    last_col = get_column_letter(RAG_COL0 + len(RAG_METRICS) - 1)
+    cells = f"{first_col}2:{last_col}{last}"
+    # A metric with nothing to measure is blank, and a blank compares as 0:
+    # stop there first, so it stays uncoloured rather than red.
+    ws.conditional_formatting.add(
+        cells, FormulaRule(formula=[f"ISBLANK({first_col}2)"], stopIfTrue=True)
+    )
+    _fill_when(
+        ws,
+        cells,
+        [
+            ("lessThan", "0.5", RED),
+            ("lessThan", "0.8", AMBER),
+            ("greaterThanOrEqual", "0.8", GREEN),
+        ],
+    )
+    ws.freeze_panes = "E2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(ws.max_column)}{last}"
+    _widths(ws, [7, 20, 11, 9, 12, 12, 12, 12, 11, 11, 11, 44, 14, 36, 11, 44, 20])
+    return last
+
+
 def summary_sheet(
-    wb: Workbook, meta: dict, rows: list[tuple[dict, dict]], last: int
+    wb: Workbook, meta: dict, rows: list[tuple[dict, dict]], last: int, rag_last: int
 ) -> None:
     ws = wb.active
     ws.title = "Summary"
@@ -282,7 +374,7 @@ def summary_sheet(
     info = [
         ("Run date", f"{date.today():%Y-%m-%d}"),
         ("Agent model", meta["agent_model"]),
-        ("Judge model", meta["judge_model"]),
+        ("Judge model (facts and RAG metrics)", meta["judge_model"]),
         ("Search loop limit (recursion)", meta["recursion_limit"]),
         (
             "Questions",
@@ -354,7 +446,49 @@ def summary_sheet(
         ws.cell(row=row, column=4).number_format = "0%"
         ws.cell(row=row, column=5).number_format = "0.00"
     _fill_when(ws, f"F{start}:F{row}", [("greaterThan", "0", RED)])
-    _widths(ws, [30, 16, 12, 12, 14, 10])
+
+    row += 2
+    ws.cell(
+        row=row, column=1, value="RAG metrics (0-1, not part of the rubric)"
+    ).font = BOLD
+    _header(
+        ws,
+        row + 1,
+        [
+            "Metric",
+            "Mean",
+            "Questions scored",
+            "Below 0.5",
+            "Mean, answerable",
+            "Catches",
+        ],
+    )
+    start = row + 2
+    answerable = f"'RAG metrics'!$C$2:$C${rag_last}"
+    for i, (_, label, catches) in enumerate(RAG_METRICS):
+        row = start + i
+        letter = get_column_letter(RAG_COL0 + i)
+        values = f"'RAG metrics'!${letter}$2:${letter}${rag_last}"
+        _row(ws, row, [
+            label,
+            f'=IF(COUNT({values})=0,"",AVERAGE({values}))',
+            f"=COUNT({values})",
+            f'=COUNTIF({values},"<0.5")',
+            f'=IFERROR(AVERAGEIF({answerable},"yes",{values}),"")',
+            catches,
+        ])  # fmt: skip
+        ws.cell(row=row, column=2).number_format = "0.00"
+        ws.cell(row=row, column=5).number_format = "0.00"
+    _row(
+        ws,
+        row + 1,
+        [
+            "Answerable: the record holds the answer (the question names sources to cite). "
+            "A metric with nothing to measure is left blank and not averaged."
+        ],
+        border=None,
+    )
+    _widths(ws, [30, 16, 16, 12, 16, 50])
 
 
 def main() -> None:
@@ -362,7 +496,8 @@ def main() -> None:
     rows = [(r, _measure(r)) for r in data["results"]]
     wb = Workbook()
     last = results_sheet(wb, rows)
-    summary_sheet(wb, data, rows, last)
+    rag_last = rag_sheet(wb, rows)
+    summary_sheet(wb, data, rows, last, rag_last)
     responses_sheet(wb, rows)
     rubric_sheet(wb)
     wb.calculation.fullCalcOnLoad = True
