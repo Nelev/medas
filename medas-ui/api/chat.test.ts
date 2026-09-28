@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { ask } from "@/api/chat"
+import { ask, getConversation } from "@/api/chat"
 import { requestFrom, signInAs, stubFetch, TOKEN } from "@/test/api"
 import {
   askedTurns,
@@ -107,5 +107,28 @@ describe("ask", () => {
     await expect(
       ask({ role: "user", text: "x" }, CONVERSATION_ID),
     ).rejects.toThrow("Failed to fetch")
+  })
+})
+
+describe("getConversation", () => {
+  it("reads the whole conversation with a GET, the session token alone", async () => {
+    const fetchMock = stubFetch(jsonResponse(createdConversation))
+
+    const result = await getConversation(CONVERSATION_ID)
+
+    const { pathname, init } = requestFrom(fetchMock)
+    expect(pathname).toBe(`/conversations/${CONVERSATION_ID}`)
+    expect(init.method).toBe("GET")
+    expect(init.headers).toMatchObject({ Authorization: `Bearer ${TOKEN}` })
+    expect(result).toEqual({
+      conversationId: CONVERSATION_ID,
+      turns: createdConversation.messages,
+    })
+  })
+
+  it("throws when the conversation is not the user's", async () => {
+    stubFetch(jsonResponse({ detail: "Conversation not found" }, 404))
+
+    await expect(getConversation(CONVERSATION_ID)).rejects.toThrow("404")
   })
 })
