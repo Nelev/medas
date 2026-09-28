@@ -47,8 +47,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`dark ${instrumentSans.variable} ${instrumentSerif.variable} ${jetBrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        {/* One tooltip provider for the app, as shadcn's sidebar expects:
-            its collapsed rows show their titles as tooltips. */}
+        {/* One tooltip provider for the app, as shadcn's sidebar expects. */}
         <ClerkProvider appearance={{ theme: shadcn }}>
           <TooltipProvider>{children}</TooltipProvider>
         </ClerkProvider>

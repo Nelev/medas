@@ -65,6 +65,9 @@ class FakeSession:
         self.statements: list[str] = []
         self.parameters: list[dict | None] = []
         self.stored: list[SimpleNamespace] = []
+        # The user's conversation ids, newest first, as the list query
+        # returns them.
+        self.conversations: list[uuid.UUID] = []
         self.committed = False
 
     def _record(self, statement, params) -> None:
@@ -105,6 +108,11 @@ class FakeSession:
                 for role, content, meta in zip(
                     params["roles"], params["contents"], params["metas"], strict=True
                 )
+            )
+
+        if sql.startswith("SELECT conversation_id FROM conversations"):
+            return FakeResult(
+                SimpleNamespace(conversation_id=c) for c in self.conversations
             )
 
         return FakeResult(self.stored if self.matched else [])
@@ -157,18 +165,35 @@ def fake_session() -> AsyncIterator[FakeSession]:
     app.dependency_overrides.clear()
 
 
-async def test_root_greets_the_user(client):
+async def test_root_greets_the_user(client, fake_session):
     named("mattia")
 
     response = await client.get("/")
 
     assert response.status_code == 200
     assert response.json() == {
-        "messages": [{"role": "assistant", "text": "Hi mattia, how can I help you?"}]
+        "messages": [{"role": "assistant", "text": "Hi mattia, how can I help you?"}],
+        "conversations": [],
     }
 
 
-async def test_root_without_a_name_greets_there(client):
+async def test_root_lists_the_users_conversations(client, fake_session):
+    newer, older = uuid.uuid4(), uuid.uuid4()
+    fake_session.conversations = [newer, older]
+
+    response = await client.get("/")
+
+    # In the order the query returns them, newest first.
+    assert response.json()["conversations"] == [
+        {"conversation_id": str(newer)},
+        {"conversation_id": str(older)},
+    ]
+    # Scoped to the signed-in user in the statement itself, live ones only.
+    assert fake_session.parameters[-1] == {"user_id": USER_ID}
+    assert "NOT deleted" in fake_session.statements[-1]
+
+
+async def test_root_without_a_name_greets_there(client, fake_session):
     response = await client.get("/")
 
     assert response.json()["messages"][0]["text"] == (

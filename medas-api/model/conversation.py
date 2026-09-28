@@ -14,6 +14,7 @@ __all__ = [
     "Conversation",
     "create_conversation",
     "greeting_text",
+    "list_conversations",
 ]
 
 
@@ -42,6 +43,15 @@ class Conversation(Base):
 
 _CREATE = text(
     "INSERT INTO conversations (user_id) VALUES (:user_id) RETURNING conversation_id"
+)
+
+
+# Scoped to the user and to live conversations in the statement itself, like
+# every other read: another user's or a deleted conversation is never listed.
+_LIST = text(
+    "SELECT conversation_id FROM conversations "
+    "WHERE user_id = :user_id AND NOT deleted "
+    "ORDER BY created_at DESC"
 )
 
 
@@ -89,3 +99,11 @@ async def create_conversation(
         user_id=user_id,
     )
     return conversation_id, messages
+
+
+async def list_conversations(
+    session: AsyncSession, user_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """The ids of user_id's live conversations, newest first."""
+    result = await session.execute(_LIST, {"user_id": user_id})
+    return [row.conversation_id for row in result]

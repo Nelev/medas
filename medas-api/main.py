@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth import CurrentUser, GreetingName, get_auth_settings
 from controller import NotFound, ask_question, get_conversation, index_upload
 from database.database import dispose_engine, get_session, init_engine
-from model import greeting_text
+from model import greeting_text, list_conversations
 from rag_pipeline.vector_store import init_vector_store
 from schema import NewMessage
 
@@ -56,11 +56,18 @@ async def not_found(_: Request, exc: NotFound) -> JSONResponse:
 
 
 @app.get("/")
-def init_user_profile(_: CurrentUser, name: GreetingName):
-    # Not persisted: this is the preview shown before the user says anything.
-    # The stored copy is seeded by POST /ask from the same text. Signed in or
-    # nothing, like every other route here.
-    return {"messages": [{"role": "assistant", "text": greeting_text(name)}]}
+async def init_user_profile(
+    user_id: CurrentUser, session: SessionDep, name: GreetingName
+):
+    # The greeting is not persisted: it is the preview shown before the user
+    # says anything, and the stored copy is seeded by POST /ask from the same
+    # text. Alongside it, the user's past conversations for the sidebar. Signed
+    # in or nothing, like every other route here.
+    conversations = await list_conversations(session, user_id)
+    return {
+        "messages": [{"role": "assistant", "text": greeting_text(name)}],
+        "conversations": [{"conversation_id": c} for c in conversations],
+    }
 
 
 @app.post("/ask", status_code=201)

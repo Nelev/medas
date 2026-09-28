@@ -54,14 +54,19 @@ const askedTurns = {
   messages: [storedMessage, storedReply],
 }
 
-// The sidebar's rows, as api/conversations.ts hands them over: newest first.
+// The sidebar's rows, as api/init.ts hands them over: newest first.
 const conversationList: ConversationSummary[] = [
-  { conversationId: CONVERSATION_ID, title: firstMessage.text },
-  {
-    conversationId: "7d2e4b91-3f6a-4c8e-a5b7-9e0f1c2d3a4b",
-    title: "What were my last blood test results?",
-  },
+  { conversationId: CONVERSATION_ID },
+  { conversationId: "7d2e4b91-3f6a-4c8e-a5b7-9e0f1c2d3a4b" },
 ]
+
+// What GET / answers with: the greeting, and the same list in snake_case.
+const initResponse = {
+  messages: [greeting],
+  conversations: conversationList.map((c) => ({
+    conversation_id: c.conversationId,
+  })),
+}
 
 // A fetch Response is only ever consumed here through ok/status/json(), so a
 // stub with those three is enough and keeps the failure cases readable.
@@ -84,6 +89,7 @@ export {
   createdConversation,
   askedTurns,
   conversationList,
+  initResponse,
   jsonResponse,
   asChatMessage,
 }
