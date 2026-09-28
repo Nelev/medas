@@ -4,7 +4,7 @@ from functools import lru_cache
 from dotenv import load_dotenv
 from openai import AsyncOpenAI, OpenAI
 
-from rag_pipeline.const import OPENAI_BASE_URL
+from utils import OPENROUTER_BASE_URL
 
 load_dotenv()
 
@@ -22,7 +22,7 @@ def get_client() -> OpenAI:
     anything that only wants the functions, CI included.
     """
     return OpenAI(
-        base_url=OPENAI_BASE_URL,
+        base_url=OPENROUTER_BASE_URL,
         api_key=OPENROUTER_API_KEY,
         # An embedding is one short round trip; a request still running after
         # this is hung, and it is in the path of every record search.
@@ -39,7 +39,7 @@ def get_async_client() -> AsyncOpenAI:
     nothing -- it embeds one batch and exits.
     """
     return AsyncOpenAI(
-        base_url=OPENAI_BASE_URL,
+        base_url=OPENROUTER_BASE_URL,
         api_key=OPENROUTER_API_KEY,
         timeout=EMBEDDING_TIMEOUT_SECONDS,
     )
