@@ -102,4 +102,4 @@ Ingest keeps unrelated documents out. These keep unrelated _questions_ and weak 
 
 ## Evaluation
 
-`eval/questions.jsonl`: `must_cite` uses manifest ids (`D05`) or chunk-id prefixes (`allergy:00`, matching `…:allergy:00`). `must_say` and `must_not_say` are facts to judge semantically, not literal substrings. Use an LLM judge or manual review. `severity` is the expected triage code. Score four things per question: the right sources cited, no forbidden fact present, the severity exact or more urgent, and valid JSON. Run it **before and after** ingest. Several questions (Q02, Q07, Q13–Q17) have a different correct answer at each stage, and that difference is the regression test for each gate.
+`eval/questions.jsonl` is scored by the eval pipeline in `eval/`. The root README's [Evaluation](../../README.md#evaluation) section explains how it works, how to run it, the rubric, and the latest results. Several questions (Q02, Q07, Q13–Q17) have a different correct answer before and after ingest, so running it at both stages tests each ingest check.
