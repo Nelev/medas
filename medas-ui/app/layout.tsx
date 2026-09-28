@@ -8,6 +8,7 @@ import {
 } from "next/font/google"
 
 import { Toaster } from "@/components/ui/sonner"
+import { TooltipProvider } from "@/components/ui/tooltip"
 
 import "./globals.css"
 
@@ -46,7 +47,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`dark ${instrumentSans.variable} ${instrumentSerif.variable} ${jetBrainsMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <ClerkProvider appearance={{ theme: shadcn }}>{children}</ClerkProvider>
+        {/* One tooltip provider for the app, as shadcn's sidebar expects:
+            its collapsed rows show their titles as tooltips. */}
+        <ClerkProvider appearance={{ theme: shadcn }}>
+          <TooltipProvider>{children}</TooltipProvider>
+        </ClerkProvider>
         {/* Top, so a notice never covers the composer at the bottom. Dark
             like the class above, and richColors tints each toast by its
             status: green for success, red for error. */}

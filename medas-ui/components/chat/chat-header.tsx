@@ -1,11 +1,21 @@
 import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs"
 import { Stethoscope } from "lucide-react"
+import type { ReactNode } from "react"
 
 import { Button } from "@/components/ui/button"
 
-export function ChatHeader() {
+interface ChatHeaderProps {
+  // Before the logo: the page's sidebar toggle for phones. A slot rather than
+  // the toggle itself, because loading.tsx renders this header outside the
+  // sidebar's provider.
+  leading?: ReactNode
+}
+
+export function ChatHeader({ leading }: ChatHeaderProps) {
   return (
     <header className="bg-card/80 flex shrink-0 items-center gap-3 border-b px-4 py-3.5 backdrop-blur-sm sm:px-5">
+      {leading}
+
       <div className="bg-primary text-primary-foreground shadow-primary/25 flex size-9.5 shrink-0 items-center justify-center rounded-[0.9rem] shadow-md">
         <Stethoscope className="size-4.5" aria-hidden />
       </div>
