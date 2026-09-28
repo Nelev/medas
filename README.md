@@ -207,7 +207,7 @@ The agent answers from passages of the patient's own record, retrieved while it 
 flowchart LR
   subgraph ingest["Ingest: uv run python -m langchain_agent.rag"]
     J["medical_history.json"] --> C["chunks.py: one chunk per record entry"]
-    P["dataset/documents/*.pdf"] --> G{"pdf.py: four checks"}
+    P["dataset/documents/*.pdf"] --> G{"pdf.py: five checks"}
     G -->|accepted| S["PDFPlumberLoader, then RecursiveCharacterTextSplitter"]
     G -->|refused| X["logged, not indexed"]
   end
@@ -245,14 +245,17 @@ The chunk ids are what the agent cites, and what the evaluation matches against 
 
 ### 2. Ingesting PDFs
 
-[`rag_pipeline/pdf.py`](medas-api/rag_pipeline/pdf.py) (`aindex_pdfs`) runs every PDF in `dataset/documents/` through four checks. A refused file is logged with its reason and adds no chunks, and one bad file never stops the batch:
+[`rag_pipeline/pdf.py`](medas-api/rag_pipeline/pdf.py) (`aindex_pdfs`) runs every PDF in `dataset/documents/` through five checks. A refused file is logged with its reason and adds no chunks, and one bad file never stops the batch:
 
-| Check          | Rule                                           | Refuses in the dataset                  |
-| -------------- | ---------------------------------------------- | --------------------------------------- |
-| Readable       | `pdfplumber` can open and read it              | D15 (encrypted), D16 (truncated)        |
-| Has text       | Some text can be extracted. There's no OCR     | D09 (a scan)                            |
-| No hidden text | No character under 3 pt, and none in white     | D11 (a prompt injection)                |
-| This patient's | The record's date of birth appears in the text | D10 (a namesake), D12 (motor insurance) |
+| Check          | Rule                                                                             | Refuses in the dataset                  |
+| -------------- | -------------------------------------------------------------------------------- | --------------------------------------- |
+| Readable       | `pdfplumber` can open and read it                                                | D15 (encrypted), D16 (truncated)        |
+| Has text       | Some text can be extracted. There's no OCR                                       | D09 (a scan)                            |
+| No hidden text | No character under 3 pt, and none in white                                       | D11 (a prompt injection)                |
+| This patient's | The record's date of birth appears in the text                                   | D10 (a namesake), D12 (motor insurance) |
+| Same surname   | The record's surname appears too, so a stranger born the same day is not a match | —                                       |
+
+An upload through `POST /documents` gets one more check after these, before anything is embedded: [`rag_pipeline/verify.py`](medas-api/rag_pipeline/verify.py) (`averify`) asks `openai/gpt-4o-mini` whether the document is medical and about this patient, given the identity line and the first 4,000 characters of the file's own text. Anything but a clear yes on both is a `422` (`not a medical document`, `not about this patient`, `could not be verified`); the model's reason is logged, not returned. It is one billable call per upload, and the ingest script does not run it.
 
 The hidden-text check reads characters with pdfplumber directly, because the LangChain loader doesn't expose font sizes or colours. Accepted files are loaded page by page with LangChain's `PDFPlumberLoader` and split with `RecursiveCharacterTextSplitter` (1,000 characters, 100 overlap), so most pages stay one chunk. The id includes a hash of the file's bytes, so a copy under another name (D14 duplicates D04) produces the same ids and is stored once. The [dataset README](medas-api/dataset/README.md#ingest-pipeline-for-pdfs) lists each document and the outcome it should get.
 

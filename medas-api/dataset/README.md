@@ -64,16 +64,19 @@ There are three deliberate conflicts. D03 contradicts `current_medication` in th
 
 ## Ingest pipeline for PDFs
 
-[`rag_pipeline/pdf.py`](../rag_pipeline/pdf.py) (`aindex_pdfs`) runs every PDF in `dataset/documents/` through four checks, from `langchain_agent/rag.py`. A refused file is printed with its reason and contributes no chunks, and one bad file never stops the batch.
+[`rag_pipeline/pdf.py`](../rag_pipeline/pdf.py) (`aindex_pdfs`) runs every PDF in `dataset/documents/` through five checks, from `langchain_agent/rag.py`. A refused file is printed with its reason and contributes no chunks, and one bad file never stops the batch.
 
-| #   | Check          | Rule                                                             | Stops                                    |
-| --- | -------------- | ---------------------------------------------------------------- | ---------------------------------------- |
-| 1   | Readable       | `pdfplumber` can open and read it                                | D15 encrypted, D16 truncated             |
-| 2   | Has text       | Some text extracted (no OCR)                                     | D09 scan                                 |
-| 3   | No hidden text | No character under 3 pt, or white                                | D11 injection                            |
-| 4   | This patient's | The record's DOB is in the text, as `07/06/1980` or `1980-06-07` | D10 namesake, D11 leaflet, D12 insurance |
+| #   | Check          | Rule                                                             | Stops                                              |
+| --- | -------------- | ---------------------------------------------------------------- | -------------------------------------------------- |
+| 1   | Readable       | `pdfplumber` can open and read it                                | D15 encrypted, D16 truncated                       |
+| 2   | Has text       | Some text extracted (no OCR)                                     | D09 scan                                           |
+| 3   | No hidden text | No character under 3 pt, or white                                | D11 injection                                      |
+| 4   | This patient's | The record's DOB is in the text, as `07/06/1980` or `1980-06-07` | D10 namesake, D11 leaflet, D12 insurance           |
+| 5   | Same surname   | The record's surname is in the text too                          | A stranger born the same day (none in the dataset) |
 
 Check 4 also keeps unrelated files out: a non-medical document almost never carries the patient's date of birth.
+
+Uploads through `POST /documents` also get a model check (`rag_pipeline/verify.py`) that the file is medical and about this patient, for what the string checks cannot tell apart, such as a bank statement that prints the date of birth. Ingest does not run it: these files are curated, and it would be a billable call per file.
 
 Pages are loaded with LangChain's `PDFPlumberLoader` and split with `RecursiveCharacterTextSplitter` (1,000 characters, 100 overlap), so most pages are one chunk (D03 is two). Every chunk is `kind: document`. Its text is the identity line from `chunks.py`, then `Document <filename>, page <n>.`, then the split's text. The id is `{patient_id}:pdf:{sha256(file)[:12]}:p{n}:{start_index}`, so a copy under another name (D14) gets the same ids and is embedded once. Chunks are embedded and written through the shared store in `rag_pipeline/vector_store.py`, so they use the same model as search.
 
