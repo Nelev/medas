@@ -91,8 +91,10 @@ export function ChatComposer() {
     // A snackbar rather than the banner: the banner explains a failed send
     // above the field it came from, and an upload has no such place.
     try {
-      await uploadPdf(formData)
-      toast.success("Document uploaded")
+      const result = await uploadPdf(formData, conversationId)
+
+      // Stored or refused, the agent's answer is in the turns.
+      receiveTurns(result.conversationId, result.turns)
     } catch (cause) {
       toast.error(
         failure(

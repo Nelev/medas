@@ -12,19 +12,15 @@ memory of its own, nothing it does not need to do that.
 
 import asyncio
 import json
-import operator
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Annotated, NamedTuple, NotRequired
 
 from dotenv import load_dotenv
-from langchain.agents import AgentState, create_agent
-from langchain.messages import ToolMessage
+from langchain.agents import create_agent
 from langchain.tools import ToolRuntime, tool
 from langchain_openai import ChatOpenAI
-from langgraph.types import Command
 
 from langchain_agent.assistant_general_prompt import ASSISTANT_SYSTEM_PROMPT
 from langchain_agent.documents import Attachment, add_document
@@ -47,15 +43,6 @@ class RecordContext:
     attachments: tuple[Attachment, ...] = ()
 
 
-class RecordState(AgentState):
-    """The run's state, which the model never sees: only messages reach it."""
-
-    # Chunks written per attachment by add_patient_document: what a caller
-    # reads to know a file was stored, rather than the model's word for it.
-    # Merged, so two tool calls in one step do not overwrite each other.
-    stored: NotRequired[Annotated[dict[str, int], operator.or_]]
-
-
 @tool
 async def search_patient_record(query: str, runtime: ToolRuntime[RecordContext]) -> str:
     """Search the patient's medical record for passages relevant to a query."""
@@ -73,50 +60,29 @@ def _attachment(
     return next((a for a in runtime.context.attachments if a.name == document), None)
 
 
-def _reply(
-    runtime: ToolRuntime,
-    document: str,
-    status: str,
-    update: dict | None = None,
-    **fields,
-) -> Command:
+def _reply(document: str, status: str, **fields) -> str:
     # Only the status goes back to the model, never the document's text: the
     # file is untrusted, and this agent can write to the record.
-    result = {"document": document, "status": status, **fields}
-    message = ToolMessage(json.dumps(result), tool_call_id=runtime.tool_call_id)
-    return Command(update={"messages": [message], **(update or {})})
-
-
-def _not_attached(runtime: ToolRuntime[RecordContext], document: str) -> Command:
-    attached = [a.name for a in runtime.context.attachments]
-    return _reply(runtime, document, "not attached", attached=attached)
+    return json.dumps({"document": document, "status": status, **fields})
 
 
 @tool
 async def add_patient_document(
     document: str, runtime: ToolRuntime[RecordContext]
-) -> Command:
+) -> str:
     """Add a PDF the patient attached to this message to their record, once
     it is checked to be a medical document about them, so
     search_patient_record can find it. `document` is the attachment's file
     name."""
     attachment = _attachment(runtime, document)
     if attachment is None:
-        return _not_attached(runtime, document)
+        attached = [a.name for a in runtime.context.attachments]
+        return _reply(document, "not attached", attached=attached)
     try:
         chunks = await add_document(attachment, runtime.context.record_id)
     except Rejected as exc:
-        return _reply(runtime, document, "rejected", reason=str(exc))
-    return _reply(
-        runtime, document, "stored", {"stored": {document: chunks}}, chunks=chunks
-    )
-
-
-class Answer(NamedTuple):
-    reply: str
-    # Chunks stored per attachment, read from the run's state: what the store
-    # tool did, not the model's word for it.
-    stored: dict[str, int]
+        return _reply(document, "rejected", reason=str(exc))
+    return _reply(document, "stored", chunks=chunks)
 
 
 @lru_cache
@@ -135,14 +101,13 @@ def build_agent():
         ),
         tools=[search_patient_record, add_patient_document],
         system_prompt=ASSISTANT_SYSTEM_PROMPT,
-        state_schema=RecordState,
         context_schema=RecordContext,
     )
 
 
 async def answer(
     messages: list[dict], *, record_id: str, attachments: Sequence[Attachment] = ()
-) -> Answer:
+) -> str:
     """Answer the last turn of `messages`, in the context of the ones before.
 
     The whole conversation goes in, oldest first, each turn a role and its
@@ -160,7 +125,7 @@ async def answer(
         context=RecordContext(record_id, tuple(attachments)),
     )
 
-    return Answer(result["messages"][-1].content, result.get("stored", {}))
+    return result["messages"][-1].content
 
 
 async def main() -> None:
@@ -169,7 +134,7 @@ async def main() -> None:
         # The seeded patient's record, the one the corpus holds.
         record_id="pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0",
     )
-    print(result.reply)
+    print(result)
 
 
 if __name__ == "__main__":

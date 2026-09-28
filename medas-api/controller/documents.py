@@ -1,24 +1,27 @@
 """Adding a PDF the user uploads to their record, through the agent.
 
-The agent is the one the chat uses, asked to add the file: its document tools
-check it (load_pdf, then the model check in rag_pipeline/verify.py) and store
-it. Whether it was stored is read from what the store tool did, not from what
-the model says; its reply is passed back as the message.
+An upload is a turn in the conversation, the way a question is: a user turn
+records the request, the chat agent is asked to add the file (its document
+tools check it -- load_pdf, then the model check in rag_pipeline/verify.py --
+and store it), and its reply, stored or refused, is the assistant turn.
 """
 
 import uuid
 
 from fastapi import UploadFile
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from controller.conversation import NotFound
-from langchain_agent.agent import answer
+from controller.conversation import NotFound, answer_and_store, write_user_turn
 from langchain_agent.documents import Attachment
 from langchain_agent.patient import record_id
-from rag_pipeline.pdf import Rejected
+from model import MessageRole
 from rag_pipeline.record import find_record
-from utils import messages_as_turns, parse_agent_reply
+from utils import messages_as_turns
 
-__all__ = ["DocumentNotStored", "RecordNotFound", "index_upload"]
+__all__ = ["RecordNotFound", "index_upload"]
+
+# The user's turn an upload writes, before the agent is asked.
+UPLOAD_REQUESTED = "upload file requested"
 
 
 class RecordNotFound(NotFound):
@@ -27,33 +30,43 @@ class RecordNotFound(NotFound):
     detail = "Record not found"
 
 
-class DocumentNotStored(Rejected):
-    """The agent did not store the upload: a check refused it, or the run
-    ended before it got that far. The message is the agent's."""
+async def index_upload(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    greeting_name: str | None,
+    file: UploadFile,
+    conversation_id: uuid.UUID | None,
+) -> tuple[uuid.UUID, list[dict]]:
+    """Have the agent verify and store `file`, as turns in a conversation.
 
-
-async def index_upload(user_id: uuid.UUID, file: UploadFile) -> dict:
-    """Have the agent verify and store `file`. Returns the chunks it wrote and
-    its message.
-
-    Raises DocumentNotStored, with the agent's message, when the file was
-    not stored.
+    Like ask_question: starts a conversation when there is not one yet, and
+    returns its id and the turns this call added -- the upload request and
+    the agent's answer, stored or refused.
     """
     # Checked here as well as in the tools, so a user without a record costs
     # no model call.
-    record = find_record(record_id(user_id))
-    if record is None:
+    if find_record(record_id(user_id)) is None:
         raise RecordNotFound
 
-    name = file.filename or "upload.pdf"
-    attachment = Attachment(name, await file.read())
-    reply, stored = await answer(
-        messages_as_turns([], f"Please add the attached document {name} to my record."),
-        record_id=record["id"],
-        attachments=[attachment],
+    conversation_id, written = await write_user_turn(
+        session,
+        user_id,
+        greeting_name,
+        MessageRole.USER,
+        UPLOAD_REQUESTED,
+        conversation_id,
     )
-    message, _ = parse_agent_reply(reply)
 
-    if name not in stored:
-        raise DocumentNotStored(message)
-    return {"chunks": stored[name], "message": message}
+    # Without the conversation's history: the agent is checking a file, and
+    # what was said before has no bearing on whether it belongs.
+    name = file.filename or "upload.pdf"
+    answered = await answer_and_store(
+        session,
+        conversation_id,
+        user_id,
+        messages_as_turns([], f"Please add the attached document {name} to my record."),
+        attachments=[Attachment(name, await file.read())],
+    )
+    await session.commit()
+
+    return conversation_id, [*written, answered]

@@ -6,11 +6,13 @@ the flow -- what is read, what is written, and when it is committed -- lives.
 """
 
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from langchain_agent.agent import answer as ask_agent
+from langchain_agent.documents import Attachment
 from langchain_agent.patient import record_id
 from model import MessageRole, append_message, create_conversation, list_messages
 from schema import NewMessage
@@ -20,8 +22,10 @@ __all__ = [
     "ConversationNotFound",
     "NotFound",
     "UserNotFound",
+    "answer_and_store",
     "ask_question",
     "get_conversation",
+    "write_user_turn",
 ]
 
 
@@ -68,38 +72,24 @@ async def ask_question(
     `name` is the one the greeting addresses, read only when a conversation
     is started.
     """
-    if conversation_id is None:
-        try:
-            conversation_id, written = await create_conversation(
-                session, user_id, name, message.role, message.text
-            )
-        except IntegrityError as exc:
-            # The only constraint here is the user_id FK. current_user has
-            # just found the row, so this is a user deleted since.
-            raise UserNotFound from exc
+    # Read before the new turn is written, so the model is not shown the
+    # question it is being asked twice.
+    history = (
+        await get_conversation(session, user_id, conversation_id)
+        if conversation_id is not None
+        else None
+    )
 
+    conversation_id, written = await write_user_turn(
+        session, user_id, name, message.role, message.text, conversation_id
+    )
+
+    if history is None:
         # The greeting, then the question: everything before the question is
         # what the patient has seen.
         history = written[:-1]
-    else:
-        # Read before the new turn is written, so the model is not shown the
-        # question it is being asked twice.
-        history = await get_conversation(session, user_id, conversation_id)
 
-        sent = await append_message(
-            session, conversation_id, message.role, message.text, user_id=user_id
-        )
-        if sent is None:
-            # Live a moment ago and not now. The write is the only authority.
-            raise ConversationNotFound
-
-        written = [sent]
-
-    # Committed before the model call, so a run of several round trips does
-    # not hold a write transaction open for its duration.
-    await session.commit()
-
-    reply = await _answer_and_store(
+    reply = await answer_and_store(
         session,
         conversation_id,
         user_id,
@@ -124,16 +114,62 @@ async def get_conversation(
     return messages
 
 
-async def _answer_and_store(
+async def write_user_turn(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    name: str | None,
+    role: str,
+    text: str,
+    conversation_id: uuid.UUID | None,
+) -> tuple[uuid.UUID, list[dict]]:
+    """Write a user turn, starting a conversation for it when there is none,
+    and commit it.
+
+    Returns the conversation's id and what was written: the greeting and the
+    turn on a new conversation, the turn alone on an existing one.
+    """
+    if conversation_id is None:
+        try:
+            conversation_id, written = await create_conversation(
+                session, user_id, name, role, text
+            )
+        except IntegrityError as exc:
+            # The only constraint here is the user_id FK. current_user has
+            # just found the row, so this is a user deleted since.
+            raise UserNotFound from exc
+    else:
+        sent = await append_message(
+            session, conversation_id, role, text, user_id=user_id
+        )
+        if sent is None:
+            # Live a moment ago and not now. The write is the only authority.
+            raise ConversationNotFound
+
+        written = [sent]
+
+    # Committed before the model call, so a run of several round trips does
+    # not hold a write transaction open for its duration.
+    await session.commit()
+
+    return conversation_id, written
+
+
+async def answer_and_store(
     session: AsyncSession,
     conversation_id: uuid.UUID,
     user_id: uuid.UUID,
     turns: list[dict],
+    attachments: Sequence[Attachment] = (),
 ) -> dict:
-    """Ask the agent, and store what it answers."""
+    """Ask the agent, and store what it answers. Not committed.
+
+    `attachments` are PDFs sent with the last turn, for the document tool.
+    """
     # The record searched is the signed-in user's, by the pat_{users.id}
     # convention langchain_agent/patient.py owns.
-    reply = (await ask_agent(turns, record_id=record_id(user_id))).reply
+    reply = await ask_agent(
+        turns, record_id=record_id(user_id), attachments=attachments
+    )
     reply_text, extra = parse_agent_reply(reply)
 
     return await append_message(

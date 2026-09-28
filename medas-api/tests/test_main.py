@@ -18,12 +18,10 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 import controller.conversation
-import main
+import controller.documents
 from auth import current_user, greeting_name
 from database.database import get_session
-from langchain_agent.agent import Answer
 from main import app
-from rag_pipeline.pdf import Rejected
 
 SERVER_VERSION = "18.0 (Debian 18.0-1)"
 
@@ -206,10 +204,10 @@ def stub_the_agent(monkeypatch):
     """
     calls = AgentCalls()
 
-    async def _answer(turns, *, record_id):
+    async def _answer(turns, *, record_id, attachments=()):
         calls.append(turns)
         calls.record_ids.append(record_id)
-        return Answer(AGENT_REPLY, {})
+        return AGENT_REPLY
 
     monkeypatch.setattr(controller.conversation, "ask_agent", _answer)
 
@@ -225,17 +223,14 @@ async def test_a_json_reply_is_read_for_its_message_and_triage_code(
     what the badge renders from and what an audit reads later.
     """
 
-    async def _json_answer(turns, *, record_id):
-        return Answer(
-            json.dumps(
-                {
-                    "message": "Worth seeing your GP this week.",
-                    "severity": "S3",
-                    "confidence": "moderate",
-                    "safety_net": "Come back sooner if it worsens.",
-                }
-            ),
-            {},
+    async def _json_answer(turns, *, record_id, attachments=()):
+        return json.dumps(
+            {
+                "message": "Worth seeing your GP this week.",
+                "severity": "S3",
+                "confidence": "moderate",
+                "safety_net": "Come back sooner if it worsens.",
+            }
         )
 
     monkeypatch.setattr(controller.conversation, "ask_agent", _json_answer)
@@ -592,29 +587,56 @@ async def test_every_other_route_is_401_signed_out(
 PDF = {"file": ("record.pdf", b"%PDF-1.4", "application/pdf")}
 
 
-async def test_documents_indexes_the_upload(client, monkeypatch):
-    async def fake_index_upload(user_id, file):
-        assert user_id == USER_ID
-        return {"chunks": 3, "message": "Added."}
+@pytest.fixture
+def has_record(monkeypatch):
+    """The signed-in user has a record to upload into; the agent is stubbed."""
+    monkeypatch.setattr(controller.documents, "find_record", lambda rid: {"id": rid})
 
-    monkeypatch.setattr(main, "index_upload", fake_index_upload)
 
+async def test_an_upload_starts_a_conversation(
+    client, fake_session, stub_the_agent, has_record
+):
     response = await client.post("/documents", files=PDF)
 
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok", "chunks": 3, "message": "Added."}
+    assert response.status_code == 201
+    body = response.json()
+    assert body["conversation_id"] == str(fake_session.conversation_id)
+    assert [(m["role"], m["text"]) for m in body["messages"]] == [
+        ("assistant", f"Hi {SEEDED_NAME}, how can I help you?"),
+        ("user", "upload file requested"),
+        ("assistant", AGENT_REPLY),
+    ]
+    # Asked about the file alone, not the conversation around it.
+    assert "record.pdf" in stub_the_agent[0][-1]["content"]
 
 
-async def test_a_refused_document_is_422_with_the_reason(client, monkeypatch):
-    async def fake_index_upload(user_id, file):
-        raise Rejected("not this patient")
+async def test_an_upload_joins_the_conversation(client, fake_session, has_record):
+    fake_session._store("assistant", "Hi Mattia, how can I help you?")
 
-    monkeypatch.setattr(main, "index_upload", fake_index_upload)
+    response = await client.post(
+        "/documents",
+        params={"conversationId": str(fake_session.conversation_id)},
+        files=PDF,
+    )
 
-    response = await client.post("/documents", files=PDF)
+    assert response.status_code == 201
+    assert [(m["role"], m["text"]) for m in response.json()["messages"]] == [
+        ("user", "upload file requested"),
+        ("assistant", AGENT_REPLY),
+    ]
 
-    assert response.status_code == 422
-    assert response.json() == {"detail": "not this patient"}
+
+async def test_documents_on_an_unknown_conversation_is_404(
+    client, fake_session, has_record
+):
+    fake_session.matched = False
+
+    response = await client.post(
+        "/documents", params={"conversationId": str(uuid.uuid4())}, files=PDF
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Conversation not found"}
 
 
 async def test_documents_signed_out_is_401(client, signed_out):

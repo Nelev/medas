@@ -342,20 +342,39 @@ describe("ChatComposer", () => {
       type: "application/pdf",
     })
 
+    // Same envelope as ask: the request turn and the agent's answer.
+    const uploaded = {
+      conversationId: CONVERSATION_ID,
+      turns: [storedMessage, storedReply],
+    }
+
     beforeEach(() => {
       mockedUploadPdf.mockReset()
     })
 
-    it("sends the picked file", async () => {
-      mockedUploadPdf.mockResolvedValue()
+    it("sends the picked file, without an id before the first send", async () => {
+      mockedUploadPdf.mockResolvedValue(uploaded)
       render(<ChatComposer />)
 
       await userEvent.upload(screen.getByLabelText("PDF file"), pdf)
 
       await waitFor(() => expect(mockedUploadPdf).toHaveBeenCalledTimes(1))
-      const formData = mockedUploadPdf.mock.calls[0][0]
+      const [formData, conversationId] = mockedUploadPdf.mock.calls[0]
       expect(formData.get("file")).toBe(pdf)
-      expect(toast.success).toHaveBeenCalledWith("Document uploaded")
+      expect(conversationId).toBe("")
+    })
+
+    it("names the conversation and appends the turns it added", async () => {
+      mockedUploadPdf.mockResolvedValue(uploaded)
+      useChatStore.setState({ conversationId: CONVERSATION_ID })
+      render(<ChatComposer />)
+
+      await userEvent.upload(screen.getByLabelText("PDF file"), pdf)
+
+      await waitFor(() =>
+        expect(useChatStore.getState().messages).toEqual(uploaded.turns),
+      )
+      expect(mockedUploadPdf.mock.calls[0][1]).toBe(CONVERSATION_ID)
     })
 
     it("shows the failure", async () => {
@@ -382,7 +401,7 @@ describe("ChatComposer", () => {
         await screen.findByRole("button", { name: "Uploading document..." }),
       ).toBeDisabled()
 
-      settle.resolve()
+      settle.resolve(uploaded)
 
       expect(
         await screen.findByRole("button", { name: "Upload document" }),
