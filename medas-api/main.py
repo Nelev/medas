@@ -103,12 +103,14 @@ async def read_conversation(
 
 @app.post("/documents")
 async def upload_document(file: UploadFile, user_id: CurrentUser):
-    """Index a PDF into the signed-in user's record, for the agent to search.
+    """Have the agent add a PDF to the signed-in user's record, for it to
+    search.
 
-    A file that does not belong to the record (no date of birth, hidden text,
-    unreadable) is a 422 with the reason, and nothing is stored.
+    A file it does not store (not medical, not this patient's, hidden text,
+    unreadable) is a 422 with the agent's message, and nothing is stored.
     """
-    return {"status": "ok", "chunks": await index_upload(user_id, file)}
+    reply = await index_upload(user_id, file)
+    return {"status": "ok", **reply}
 
 
 @app.get("/health/db")

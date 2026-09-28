@@ -133,7 +133,7 @@ async def _answer_and_store(
     """Ask the agent, and store what it answers."""
     # The record searched is the signed-in user's, by the pat_{users.id}
     # convention agent/patient.py owns.
-    reply = await ask_agent(turns, record_id=record_id(user_id))
+    reply = (await ask_agent(turns, record_id=record_id(user_id))).reply
     reply_text, extra = parse_agent_reply(reply)
 
     return await append_message(

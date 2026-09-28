@@ -145,13 +145,13 @@ Both suites are unit-only by design — no database, no API, no model, no browse
 
 ## API surface
 
-| Method | Path                           | Request          | Response                                                                                                                  |
-| ------ | ------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `GET`  | `/`                            | —                | `{messages: [{role, text}]}` — the greeting, not persisted                                                                |
-| `POST` | `/ask[?conversationId=<uuid>]` | `{role, text}`   | `201 {conversation_id, messages}` — the turns this request added                                                          |
-| `GET`  | `/conversations/{id}`          | —                | `{conversation_id, messages}` — the whole history, oldest first                                                           |
-| `POST` | `/documents`                   | multipart `file` | `{status: "ok", chunks}` — indexes the PDF into the user's record; `422` with the reason if refused, `404` with no record |
-| `GET`  | `/health/db`                   | —                | `{status, server_version}`                                                                                                |
+| Method | Path                           | Request          | Response                                                                                                                                                                  |
+| ------ | ------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/`                            | —                | `{messages: [{role, text}]}` — the greeting, not persisted                                                                                                                |
+| `POST` | `/ask[?conversationId=<uuid>]` | `{role, text}`   | `201 {conversation_id, messages}` — the turns this request added                                                                                                          |
+| `GET`  | `/conversations/{id}`          | —                | `{conversation_id, messages}` — the whole history, oldest first                                                                                                           |
+| `POST` | `/documents`                   | multipart `file` | `{status: "ok", chunks, message}` — the agent verifies and stores the PDF in the user's record; `422` with the agent's message if it was not stored, `404` with no record |
+| `GET`  | `/health/db`                   | —                | `{status, server_version}`                                                                                                                                                |
 
 `POST /ask` returns **what it added**, not the whole thread: three turns when it started the conversation (the greeting, the question, the answer) and two when it appended (the question and the answer). Either way the client appends them to what it already has.
 
@@ -164,7 +164,7 @@ Two things that trip people up: who is asking, and the name the greeting address
 The route does not run a tool loop of its own. It assembles the conversation, hands it to a LangChain agent, and stores what comes back.
 
 1. **Assembles the turns.** Every stored message becomes `{role, content}` — the wire calls the field `text`, a chat model calls it `content` — and the new question goes last. The whole thread is sent, so the model answers in the context of everything said before rather than the last message alone.
-2. **Runs the agent.** [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py) is a `create_agent` graph with one tool and [`agent/assistant_general_prompt.py`](medas-api/agent/assistant_general_prompt.py) as its system prompt. The graph decides for itself whether to search, how many times, and when it has enough to answer — which is the thing the hand-rolled loop this replaced could not do.
+2. **Runs the agent.** [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py) is a `create_agent` graph with three tools (a search, and two for adding a PDF the patient attaches) and [`agent/assistant_general_prompt.py`](medas-api/agent/assistant_general_prompt.py) as its system prompt. The graph decides for itself whether to search, how many times, and when it has enough to answer — which is the thing the hand-rolled loop this replaced could not do.
 3. **Searches when it asks to.** The model cannot reach the vector store; only this process can, so a tool call is a question rather than an answer. `search_patient_record(query)` takes **only** a query: whose record is searched is fixed by the service, not chosen by the model, so a message claiming a different record id cannot become a read of somebody else's chart.
 4. **Reads the reply.** The prompt specifies one JSON object, so the route parses it for `message` — what the patient sees — and stores `severity` and `confidence` as metadata.
 
@@ -255,7 +255,9 @@ The chunk ids are what the agent cites, and what the evaluation matches against 
 | This patient's | The record's date of birth appears in the text                                   | D10 (a namesake), D12 (motor insurance) |
 | Same surname   | The record's surname appears too, so a stranger born the same day is not a match | —                                       |
 
-An upload through `POST /documents` gets one more check after these, before anything is embedded: [`rag_pipeline/verify.py`](medas-api/rag_pipeline/verify.py) (`averify`) asks `openai/gpt-4o-mini` whether the document is medical and about this patient, given the identity line and the first 4,000 characters of the file's own text. Anything but a clear yes on both is a `422` (`not a medical document`, `not about this patient`, `could not be verified`); the model's reason is logged, not returned. It is one billable call per upload, and the ingest script does not run it.
+An upload through `POST /documents` gets one more check after these, before anything is embedded: [`rag_pipeline/verify.py`](medas-api/rag_pipeline/verify.py) (`averify`) asks `openai/gpt-4o-mini` whether the document is medical and about this patient, given the identity line and the first 4,000 characters of the file's own text. Anything but a clear yes on both is a refusal (`not a medical document`, `not about this patient`, `could not be verified`); the model's reason is logged, not returned. The ingest script does not run it.
+
+The upload is handled by the chat agent, not by calling these checks directly: [`controller/documents.py`](medas-api/controller/documents.py) runs it (`answer`) on the message "Please add the attached document … to my record." with the file as an attachment, and the agent calls `add_patient_document` (below). Whether the file was stored is read from the run's state (`RecordState.stored`, written by the tool), not from the reply, so a model that says it stored a file and didn't is still a `422`. The `422` detail is the agent's own message, so its wording varies. It costs about three model calls per upload (the agent's two steps plus `averify`) where calling the checks directly cost one.
 
 The hidden-text check reads characters with pdfplumber directly, because the LangChain loader doesn't expose font sizes or colours. Accepted files are loaded page by page with LangChain's `PDFPlumberLoader` and split with `RecursiveCharacterTextSplitter` (1,000 characters, 100 overlap), so most pages stay one chunk. The id includes a hash of the file's bytes, so a copy under another name (D14 duplicates D04) produces the same ids and is stored once. The [dataset README](medas-api/dataset/README.md#ingest-pipeline-for-pdfs) lists each document and the outcome it should get.
 
@@ -277,7 +279,9 @@ The 12 PDF chunks come from D01–D08 and D13. D02 and D13 have two pages each, 
 
 ### 4. Retrieval
 
-The agent's one tool, `search_patient_record(query)`, wraps [`agent/search.py`](medas-api/agent/search.py) (`search_record`). The model decides whether to search, what to search for and how many times, and sends only the query. The patient is fixed by the service: `/ask` passes `pat_{users.id}` to the run as LangChain runtime context, and the tool reads it from there. It's never a tool argument, so a message claiming another record id can't become a read of someone else's chart.
+The first tool, `search_patient_record(query)`, wraps [`agent/search.py`](medas-api/agent/search.py) (`search_record`). The model decides whether to search, what to search for and how many times, and sends only the query. The patient is fixed by the service: `/ask` passes `pat_{users.id}` to the run as LangChain runtime context, and the tool reads it from there. It's never a tool argument, so a message claiming another record id can't become a read of someone else's chart.
+
+A second tool, `add_patient_document(document)`, adds a PDF the patient attaches to their message, over [`agent/documents.py`](medas-api/agent/documents.py) (`add_document`). There is no staging table: the file travels in the run's context (`RecordContext.attachments`, passed to `answer(..., attachments=)`) and lives no longer than the run. The model only names an attachment by file name; any other name is refused. Checking and storing are one call, so there is no order for the model to get wrong: `load_pdf`'s checks, then `averify`, then the store write, and a refusal at either check stores nothing. The tool never returns the document's text to the model: the file is untrusted, and this agent can write to the record.
 
 Each search embeds the query with the same model as the corpus. It returns the 5 nearest passages, filtered on `patient_id` in the SQL, each with its `chunk_id`, text and cosine distance (lower is nearer). The store returns its 5 nearest whether or not any of them are near, so the distance is the only signal that nothing relevant was found. An account with no indexed record gets no passages, and is told its record shows nothing relevant.
 
@@ -615,6 +619,7 @@ Safety and correctness first, because these are the ones that matter if this eve
 - **The agent has no error handling.** `answer()` has no try/except, so a failed model call is a 500 rather than something the patient can act on.
 - **The prompt documents a `<patient>` block that is never sent.** Its Inputs section describes identity and demographics arriving with each question; the route sends only the conversation. The model learns who the patient is from the identity line repeated in each retrieved chunk, which works but is not what the prompt says.
 - **History is sent whole.** Every stored turn goes to the model on every request, and the transcript is re-sent on each turn within a run, so a long thread costs more with every message in it.
+- **Chat can't attach files yet.** `POST /ask` does not accept files, so in a conversation the document tool answers `not attached`; only `POST /documents` reaches them. It also has no size cap: the upload is read into memory whole.
 - **A search returns five passages.** `n_results=5`, so a question like "what episodes are in my record?" is answered from the five nearest chunks — the record holds ten episodes, and the model has no way to know it saw half of them.
 
 Then the smaller ones:

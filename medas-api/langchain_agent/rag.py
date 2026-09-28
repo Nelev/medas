@@ -24,6 +24,13 @@ def load_record() -> dict:
         return json.load(f)
 
 
+def find_record(record_id: str) -> dict | None:
+    """The record with this id, or None. One seeded record for now: any other
+    id has none."""
+    record = load_record()
+    return record if record["id"] == record_id else None
+
+
 def load_documents(record: dict) -> list[Document]:
     """One Document per clinical record from rag_pipeline.chunks. The chunk id
     is the document id, which the store keys rows on, so re-indexing replaces
