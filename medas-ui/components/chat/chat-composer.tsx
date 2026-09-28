@@ -89,15 +89,21 @@ export function ChatComposer() {
     formData.append("file", file)
 
     setIsUploadingDocument(true)
+    // Shown straight away, as a sent message is, with the typing indicator
+    // under it while the agent checks the file. The text matches the turn
+    // the API stores, whose copy takes its place when the reply lands.
+    setPending({ role: "user", text: `upload file requested: ${file.name}` })
 
-    // A snackbar rather than the banner: the banner explains a failed send
-    // above the field it came from, and an upload has no such place.
     try {
       const result = await uploadPdf(formData, conversationId)
 
       // Stored or refused, the agent's answer is in the turns.
       receiveTurns(result.conversationId, result.turns)
     } catch (cause) {
+      // Nothing was stored, so the turn is taken back out of the chat. A
+      // snackbar rather than the banner: the banner explains a failed send
+      // above the field it came from, and an upload has no such place.
+      setPending(null)
       toast.error(
         failure(
           cause,

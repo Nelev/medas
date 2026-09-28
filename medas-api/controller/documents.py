@@ -48,18 +48,20 @@ async def index_upload(
     if find_record(record_id(user_id)) is None:
         raise RecordNotFound
 
+    name = file.filename or "upload.pdf"
+
+    # Named in the turn, so the chat shows which file was sent.
     conversation_id, written = await write_user_turn(
         session,
         user_id,
         greeting_name,
         MessageRole.USER,
-        UPLOAD_REQUESTED,
+        f"{UPLOAD_REQUESTED}: {name}",
         conversation_id,
     )
 
     # Without the conversation's history: the agent is checking a file, and
     # what was said before has no bearing on whether it belongs.
-    name = file.filename or "upload.pdf"
     answered = await answer_and_store(
         session,
         conversation_id,

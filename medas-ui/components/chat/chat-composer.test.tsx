@@ -389,6 +389,8 @@ describe("ChatComposer", () => {
         ),
       )
       expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+      // Nothing was stored, so the turn shown while it went is taken back.
+      expect(useChatStore.getState().pending).toBeNull()
     })
 
     it("shows the upload in progress until it lands", async () => {
@@ -400,12 +402,19 @@ describe("ChatComposer", () => {
       expect(
         await screen.findByRole("button", { name: "Uploading document..." }),
       ).toBeDisabled()
+      // In the chat before the API answers, worded as the turn it stores.
+      expect(useChatStore.getState().pending).toEqual({
+        role: "user",
+        text: "upload file requested: record.pdf",
+      })
 
       settle.resolve(uploaded)
 
       expect(
         await screen.findByRole("button", { name: "Upload document" }),
       ).toBeEnabled()
+      // Replaced by the stored copy among the turns.
+      expect(useChatStore.getState().pending).toBeNull()
     })
 
     it("holds the send until the upload lands", async () => {

@@ -56,7 +56,7 @@ async def test_the_agent_is_asked_to_add_the_upload(calls):
     assert await index_upload(Session(), USER_ID, None, upload(), None) == (
         CONVERSATION_ID,
         [
-            {"role": "user", "text": "upload file requested"},
+            {"role": "user", "text": "upload file requested: letter.pdf"},
             {"role": "assistant", "text": "Added."},
         ],
     )
