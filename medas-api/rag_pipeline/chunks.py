@@ -13,7 +13,7 @@ class Chunk(TypedDict):
     metadata: dict[str, Any]
 
 
-def _patient_prefix(doc: dict[str, Any]) -> str:
+def patient_prefix(doc: dict[str, Any]) -> str:
     """Identity line repeated on every chunk.
 
     Retrieval hands the model one chunk with no surrounding document, so a
@@ -25,7 +25,7 @@ def _patient_prefix(doc: dict[str, Any]) -> str:
 
 def _episode_text(doc: dict[str, Any], ep: dict[str, Any]) -> str:
     return (
-        f"{_patient_prefix(doc)}. "
+        f"{patient_prefix(doc)}. "
         f"Clinical episode on {ep['date']} "
         f"({ep['type'].replace('_', ' ')}, {ep['setting'].replace('_', ' ')}). "
         f"{ep['description']}"
@@ -34,7 +34,7 @@ def _episode_text(doc: dict[str, Any], ep: dict[str, Any]) -> str:
 
 def _allergy_text(doc: dict[str, Any], al: dict[str, Any]) -> str:
     return (
-        f"{_patient_prefix(doc)}. "
+        f"{patient_prefix(doc)}. "
         f"Allergy: {al['substance']} ({al['type'].replace('_', ' ')}). "
         f"Reaction: {al['reaction']}. "
         f"Severity: {al['severity']}. "
@@ -44,7 +44,7 @@ def _allergy_text(doc: dict[str, Any], al: dict[str, Any]) -> str:
 
 def _medication_text(doc: dict[str, Any], med: dict[str, Any]) -> str:
     return (
-        f"{_patient_prefix(doc)}. "
+        f"{patient_prefix(doc)}. "
         f"Current medication: {med['name']} {med['strength']}, {med['form']}. "
         f"Dose: {med['dose']}. "
         f"Indication: {med['indication']}. Started {med['started']}."
@@ -53,7 +53,7 @@ def _medication_text(doc: dict[str, Any], med: dict[str, Any]) -> str:
 
 def _pathology_text(doc: dict[str, Any], path: dict[str, Any]) -> str:
     return (
-        f"{_patient_prefix(doc)}. "
+        f"{patient_prefix(doc)}. "
         f"Diagnosis: {path['condition']} (ICD-10 {path['icd10']}), "
         f"{path['status']}, diagnosed {path['diagnosed']}. "
         f"{path['notes']}"

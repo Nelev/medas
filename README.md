@@ -197,7 +197,7 @@ Moving the data is [`c3a5e1d97b24`](medas-api/migrations/versions/c3a5e1d97b24_a
 
 ## RAG pipeline
 
-[`medas-api/rag_pipeline/chunks.py`](medas-api/rag_pipeline/chunks.py) flattens a patient record into standalone chunks, one per clinical record. [`langchain_agent/rag.py`](medas-api/langchain_agent/rag.py) embeds them with `openai/text-embedding-3-small` via OpenRouter and stores them in the `record_chunks` table:
+[`medas-api/rag_pipeline/chunks.py`](medas-api/rag_pipeline/chunks.py) flattens a patient record into standalone chunks, one per clinical record. [`rag_pipeline/pdf.py`](medas-api/rag_pipeline/pdf.py) indexes each PDF in `medas-api/dataset/documents/`: it loads them with LangChain's `PDFPlumberLoader`, splits them with `RecursiveCharacterTextSplitter` (1,000 characters, so most pages stay whole), and embeds and stores them through the same `PGVectorStore`, after refusing any that are unreadable, have no text layer, hide text, or do not carry the patient's date of birth — see [the dataset README](medas-api/dataset/README.md#ingest-pipeline-for-pdfs). [`langchain_agent/rag.py`](medas-api/langchain_agent/rag.py) embeds them with `openai/text-embedding-3-small` via OpenRouter and stores them in the `record_chunks` table:
 
 ```bash
 cd medas-api
