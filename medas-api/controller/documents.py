@@ -1,29 +1,24 @@
-"""Indexing a PDF the user uploads into their record's vector store.
+"""Adding a PDF the user uploads to their record, through the agent.
 
-The same path the ingest script takes for dataset/documents/ -- load_pdf checks
-the file belongs to the record and chunks it, and the shared store embeds the
-chunks with the model the search uses -- plus the model check in
-rag_pipeline/verify.py, which the ingest script, over its own curated files,
-does not pay for.
+The agent is the one the chat uses, asked to add the file: its document tools
+check it (load_pdf, then the model check in rag_pipeline/verify.py) and store
+it. Whether it was stored is read from what the store tool did, not from what
+the model says; its reply is passed back as the message.
 """
 
-import shutil
-import tempfile
 import uuid
-from pathlib import Path
-from typing import Any
 
 from fastapi import UploadFile
-from starlette.concurrency import run_in_threadpool
 
+from agent.documents import Attachment
 from agent.patient import record_id
 from controller.conversation import NotFound
-from langchain_agent.rag import load_record
-from rag_pipeline.pdf import LoadedPdf, load_pdf
-from rag_pipeline.vector_store import get_vector_store
-from rag_pipeline.verify import averify
+from langchain_agent.agent import answer
+from langchain_agent.rag import find_record
+from rag_pipeline.pdf import Rejected
+from utils import messages_as_turns, parse_agent_reply
 
-__all__ = ["RecordNotFound", "index_upload"]
+__all__ = ["DocumentNotStored", "RecordNotFound", "index_upload"]
 
 
 class RecordNotFound(NotFound):
@@ -32,34 +27,33 @@ class RecordNotFound(NotFound):
     detail = "Record not found"
 
 
-def _load_upload(file: UploadFile, record: dict[str, Any]) -> LoadedPdf:
-    # load_pdf reads a path, not a stream. A directory rather than a
-    # NamedTemporaryFile, which Windows will not let pdfplumber reopen; the
-    # upload's own name is kept because it goes into every chunk. Copied from
-    # the upload's own spool rather than read into memory first.
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / Path(file.filename or "upload.pdf").name
-        with path.open("wb") as out:
-            shutil.copyfileobj(file.file, out)
-        return load_pdf(path, record)
+class DocumentNotStored(Rejected):
+    """The agent did not store the upload: a check refused it, or the run
+    ended before it got that far. The message is the agent's."""
 
 
-async def index_upload(user_id: uuid.UUID, file: UploadFile) -> int:
-    """Embed and store the chunks of `file`. Returns how many were written.
+async def index_upload(user_id: uuid.UUID, file: UploadFile) -> dict:
+    """Have the agent verify and store `file`. Returns the chunks it wrote and
+    its message.
 
-    Raises Rejected (from load_pdf or averify) when the file does not belong to the
-    record, so a refused upload stores nothing.
+    Raises DocumentNotStored, with the agent's message, when the file was
+    not stored.
     """
-    # One seeded record for now: any other user has none to upload into.
-    record = load_record()
-    if record["id"] != record_id(user_id):
+    # Checked here as well as in the tools, so a user without a record costs
+    # no model call.
+    record = find_record(record_id(user_id))
+    if record is None:
         raise RecordNotFound
 
-    # Blocking work -- the copy to disk and the PDF parse -- off the event
-    # loop, so other requests are not held up behind it.
-    chunks, text = await run_in_threadpool(_load_upload, file, record)
-    # Before the store write, so a refused document costs no embeddings.
-    await averify(text, record)
+    name = file.filename or "upload.pdf"
+    attachment = Attachment(name, await file.read())
+    reply, stored = await answer(
+        messages_as_turns([], f"Please add the attached document {name} to my record."),
+        record_id=record["id"],
+        attachments=[attachment],
+    )
+    message, _ = parse_agent_reply(reply)
 
-    await get_vector_store().aadd_documents(chunks)
-    return len(chunks)
+    if name not in stored:
+        raise DocumentNotStored(message)
+    return {"chunks": stored[name], "message": message}

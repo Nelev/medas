@@ -21,6 +21,7 @@ import controller.conversation
 import main
 from auth import current_user, greeting_name
 from database.database import get_session
+from langchain_agent.agent import Answer
 from main import app
 from rag_pipeline.pdf import Rejected
 
@@ -208,7 +209,7 @@ def stub_the_agent(monkeypatch):
     async def _answer(turns, *, record_id):
         calls.append(turns)
         calls.record_ids.append(record_id)
-        return AGENT_REPLY
+        return Answer(AGENT_REPLY, {})
 
     monkeypatch.setattr(controller.conversation, "ask_agent", _answer)
 
@@ -225,13 +226,16 @@ async def test_a_json_reply_is_read_for_its_message_and_triage_code(
     """
 
     async def _json_answer(turns, *, record_id):
-        return json.dumps(
-            {
-                "message": "Worth seeing your GP this week.",
-                "severity": "S3",
-                "confidence": "moderate",
-                "safety_net": "Come back sooner if it worsens.",
-            }
+        return Answer(
+            json.dumps(
+                {
+                    "message": "Worth seeing your GP this week.",
+                    "severity": "S3",
+                    "confidence": "moderate",
+                    "safety_net": "Come back sooner if it worsens.",
+                }
+            ),
+            {},
         )
 
     monkeypatch.setattr(controller.conversation, "ask_agent", _json_answer)
@@ -591,14 +595,14 @@ PDF = {"file": ("record.pdf", b"%PDF-1.4", "application/pdf")}
 async def test_documents_indexes_the_upload(client, monkeypatch):
     async def fake_index_upload(user_id, file):
         assert user_id == USER_ID
-        return 3
+        return {"chunks": 3, "message": "Added."}
 
     monkeypatch.setattr(main, "index_upload", fake_index_upload)
 
     response = await client.post("/documents", files=PDF)
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "chunks": 3}
+    assert response.json() == {"status": "ok", "chunks": 3, "message": "Added."}
 
 
 async def test_a_refused_document_is_422_with_the_reason(client, monkeypatch):
