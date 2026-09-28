@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, UploadFile
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -91,6 +91,13 @@ async def read_conversation(
 ):
     messages = await get_conversation(session, user_id, conversation_id)
     return {"conversation_id": conversation_id, "messages": messages}
+
+
+@app.post("/documents")
+async def upload_document(file: UploadFile, _: CurrentUser):
+    # A placeholder for the composer's upload: the file is accepted and
+    # dropped. Nothing is stored or indexed yet.
+    return {"status": "ok"}
 
 
 @app.get("/health/db")
