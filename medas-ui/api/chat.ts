@@ -105,5 +105,19 @@ const uploadPdf = async (
   return postTurns("/documents", conversationId, { headers, body: formData })
 }
 
-export { ask, uploadPdf }
+// Reads back one of the user's conversations for the sidebar to open: the
+// existing GET /conversations/{id}, whose envelope is the same as the POST
+// routes', here holding the whole history, oldest first. A 404 -- unknown,
+// deleted or not this user's -- throws like any refusal.
+const getConversation = async (conversationId: string): Promise<AskResult> => {
+  const headers = await authorization()
+  const url = `${API_BASE_URL}/conversations/${encodeURIComponent(conversationId)}`
+
+  const response = await send(url, { method: "GET", headers })
+  const data: ConversationTurnsResponse = await response.json()
+
+  return { conversationId: data.conversation_id, turns: data.messages }
+}
+
+export { ask, getConversation, uploadPdf }
 export type { AskResult, StoredMessage }
