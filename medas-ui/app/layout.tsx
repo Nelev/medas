@@ -6,6 +6,9 @@ import {
   Instrument_Serif,
   JetBrains_Mono,
 } from "next/font/google"
+
+import { Toaster } from "@/components/ui/sonner"
+
 import "./globals.css"
 
 // Instrument Sans and Instrument Serif are drawn as a pair, so the wordmark
@@ -44,6 +47,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <ClerkProvider appearance={{ theme: shadcn }}>{children}</ClerkProvider>
+        {/* Top, so a notice never covers the composer at the bottom. Dark
+            like the class above, and richColors tints each toast by its
+            status: green for success, red for error. */}
+        <Toaster position="top-center" theme="dark" richColors />
       </body>
     </html>
   )

@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { toast } from "sonner"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ask, uploadPdf } from "@/api/chat"
@@ -23,6 +24,12 @@ vi.mock("@/api/chat", () => ({
   uploadPdf: vi.fn(),
 }))
 
+// The snackbar is the library's to draw; what matters here is what the
+// composer asks it to say.
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}))
+
 const mockedAsk = vi.mocked(ask)
 const mockedUploadPdf = vi.mocked(uploadPdf)
 
@@ -35,6 +42,20 @@ const send = async (text: string) => {
   await user.clear(field)
   await user.type(field, text)
   await user.click(screen.getByRole("button", { name: "Send message" }))
+}
+
+// A request that settles only when the test says so, to hold the composer in
+// the window between sending and the answer.
+const hold = <T,>(mock: {
+  mockReturnValue: (value: Promise<T>) => unknown
+}) => {
+  let settle!: { resolve: (value: T) => void; reject: (cause: Error) => void }
+  mock.mockReturnValue(
+    new Promise<T>((resolve, reject) => {
+      settle = { resolve, reject }
+    }),
+  )
+  return settle
 }
 
 describe("ChatComposer", () => {
@@ -136,23 +157,8 @@ describe("ChatComposer", () => {
   })
 
   describe("while the reply is on its way", () => {
-    // An ask that resolves only when the test says so, to hold the composer
-    // in the window between submit and reply.
-    const holdAsk = () => {
-      let settle!: {
-        resolve: (value: Awaited<ReturnType<typeof ask>>) => void
-        reject: (cause: Error) => void
-      }
-      mockedAsk.mockReturnValue(
-        new Promise((resolve, reject) => {
-          settle = { resolve, reject }
-        }),
-      )
-      return settle
-    }
-
     it("shows the message before the API answers", async () => {
-      holdAsk()
+      hold(mockedAsk)
 
       render(<ChatComposer />)
       await send("Do I have any allergies?")
@@ -163,7 +169,7 @@ describe("ChatComposer", () => {
     })
 
     it("hands over to the stored copy once the reply lands", async () => {
-      const settle = holdAsk()
+      const settle = hold(mockedAsk)
 
       render(<ChatComposer />)
       await send("Do I have any allergies?")
@@ -178,7 +184,7 @@ describe("ChatComposer", () => {
     })
 
     it("takes the message back out when the send fails", async () => {
-      const settle = holdAsk()
+      const settle = hold(mockedAsk)
 
       render(<ChatComposer />)
       await send("hello")
@@ -190,7 +196,7 @@ describe("ChatComposer", () => {
     })
 
     it("does not send a second message until the first is answered", async () => {
-      holdAsk()
+      hold(mockedAsk)
 
       render(<ChatComposer />)
       await send("hello")
@@ -208,7 +214,7 @@ describe("ChatComposer", () => {
 
     it("appends to the list as it stands when the reply lands", async () => {
       // A list captured at submit would drop anything written meanwhile.
-      const settle = holdAsk()
+      const settle = hold(mockedAsk)
 
       render(<ChatComposer />)
       await send("And my medications?")
@@ -349,6 +355,7 @@ describe("ChatComposer", () => {
       await waitFor(() => expect(mockedUploadPdf).toHaveBeenCalledTimes(1))
       const formData = mockedUploadPdf.mock.calls[0][0]
       expect(formData.get("file")).toBe(pdf)
+      expect(toast.success).toHaveBeenCalledWith("Document uploaded")
     })
 
     it("shows the failure", async () => {
@@ -357,9 +364,41 @@ describe("ChatComposer", () => {
 
       await userEvent.upload(screen.getByLabelText("PDF file"), pdf)
 
-      expect(await screen.findByRole("alert")).toHaveTextContent(
-        "Your PDF was not uploaded",
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          expect.stringContaining("Your PDF was not uploaded"),
+        ),
       )
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    })
+
+    it("shows the upload in progress until it lands", async () => {
+      const settle = hold(mockedUploadPdf)
+      render(<ChatComposer />)
+
+      await userEvent.upload(screen.getByLabelText("PDF file"), pdf)
+
+      expect(
+        await screen.findByRole("button", { name: "Uploading document..." }),
+      ).toBeDisabled()
+
+      settle.resolve()
+
+      expect(
+        await screen.findByRole("button", { name: "Upload document" }),
+      ).toBeEnabled()
+    })
+
+    it("leaves the upload button usable after a failure", async () => {
+      mockedUploadPdf.mockRejectedValue(new Error("Failed to fetch"))
+      render(<ChatComposer />)
+
+      await userEvent.upload(screen.getByLabelText("PDF file"), pdf)
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalled())
+      expect(
+        screen.getByRole("button", { name: "Upload document" }),
+      ).toBeEnabled()
     })
   })
 })
