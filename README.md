@@ -583,6 +583,8 @@ The build needs no API. `/` renders per request, so nothing is fetched while bui
 
 **Sending shows a red banner.** The banner quotes the API's own error. `Failed to fetch` means the Next server could not reach medas-api — check `API_BASE_URL` and that the API is running.
 
+**An upload shows a red snackbar.** Upload results appear as a snackbar at the top instead of the banner: green once the document is stored, red with the same error text on failure. A `422` there means the agent refused the file (see the checks above).
+
 **A submit reloads the page with `?message=…` in the URL.** The form was submitted before React hydrated, so the browser did a plain GET. Harmless, and it resolves once the page finishes loading.
 
 **An answer arrives with no citations, saying the record does not cover it.** The `record_chunks` table is empty — build it with the RAG pipeline. The API does not fail without it; it answers from general knowledge and says so, which is harder to notice.

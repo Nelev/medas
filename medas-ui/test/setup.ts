@@ -17,12 +17,9 @@ globalThis.ResizeObserver ??= class {
 beforeEach(() => {
   // The zustand store is a module singleton, so state survives between tests
   // and whichever ran first would silently decide the result of the next.
-  useChatStore.setState({
-    conversationId: "",
-    messages: [],
-    pending: null,
-    error: "",
-  })
+  // Replaced with the store's own initial state, actions included, so a new
+  // key never has to be listed here too.
+  useChatStore.setState(useChatStore.getInitialState(), true)
 })
 
 afterEach(() => {

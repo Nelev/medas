@@ -1,10 +1,12 @@
 "use client"
 import { Paperclip, SendHorizontal, TriangleAlert } from "lucide-react"
 import { ChangeEvent, SyntheticEvent, useRef } from "react"
+import { toast } from "sonner"
 
 import { ask, uploadPdf } from "@/api/chat"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
 import {
   Tooltip,
   TooltipContent,
@@ -24,6 +26,8 @@ export function ChatComposer() {
   const receiveTurns = useChatStore((s) => s.receiveTurns)
   const setPending = useChatStore((s) => s.setPending)
   const setError = useChatStore((s) => s.setError)
+  const isUploadingDocument = useChatStore((s) => s.isUploadingDocument)
+  const setIsUploadingDocument = useChatStore((s) => s.setIsUploadingDocument)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const handleSubmit = async (event: SyntheticEvent<HTMLFormElement>) => {
@@ -77,25 +81,34 @@ export function ChatComposer() {
     // Reset so picking the same file again still fires a change.
     input.value = ""
 
-    if (!file) return
+    if (!file || isUploadingDocument) return
 
     const formData = new FormData()
     formData.append("file", file)
 
-    setError("")
+    setIsUploadingDocument(true)
 
+    // A snackbar rather than the banner: the banner explains a failed send
+    // above the field it came from, and an upload has no such place.
     try {
       await uploadPdf(formData)
+      toast.success("Document uploaded")
     } catch (cause) {
-      setError(
+      toast.error(
         failure(
           cause,
           "Could not upload that PDF.",
           "Your PDF was not uploaded.",
         ),
       )
+    } finally {
+      setIsUploadingDocument(false)
     }
   }
+
+  const uploadLabel = isUploadingDocument
+    ? "Uploading document..."
+    : "Upload document"
 
   return (
     <div className="mx-auto w-full max-w-2xl">
@@ -140,15 +153,20 @@ export function ChatComposer() {
                 type="button"
                 size="icon"
                 variant="ghost"
-                aria-label="Upload document"
-                disabled={pending !== null}
+                aria-label={uploadLabel}
+                aria-busy={isUploadingDocument}
+                disabled={pending !== null || isUploadingDocument}
                 onClick={() => fileRef.current?.click()}
                 className="size-9 shrink-0 rounded-full"
               >
-                <Paperclip className="size-4" aria-hidden />
+                {isUploadingDocument ? (
+                  <Spinner aria-hidden />
+                ) : (
+                  <Paperclip className="size-4" aria-hidden />
+                )}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Upload document</TooltipContent>
+            <TooltipContent>{uploadLabel}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>

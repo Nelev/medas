@@ -19,6 +19,10 @@ const useChatStore = create(
       // Empty unless the last send failed. In the store rather than in the
       // composer's own state so anything else that sends can set it too.
       error: "",
+      // True while a PDF is on its way to the API. Only the upload button
+      // waits on it: /documents does not touch the conversation, so asking
+      // meanwhile is fine.
+      isUploadingDocument: false,
     },
     // set merges shallowly, so a setter returns only the keys it changes.
     (set) => ({
@@ -35,6 +39,8 @@ const useChatStore = create(
         })),
       setPending: (pending: ChatMessageProps | null) => set({ pending }),
       setError: (error: string) => set({ error }),
+      setIsUploadingDocument: (isUploadingDocument: boolean) =>
+        set({ isUploadingDocument }),
     }),
   ),
 )
