@@ -31,8 +31,8 @@ from dataset.eval.common import (
 )
 from dataset.eval.rag_metrics import score_safely
 from langchain_agent.agent import MODEL_NAME, RecordContext, build_agent
-from langchain_agent.rag import MEDICAL_HISTORY_PATH
 from rag_pipeline.pdf import doc_prefix
+from rag_pipeline.record import MEDICAL_HISTORY_PATH
 from rag_pipeline.vector_store import get_embeddings, init_vector_store
 
 DATASET = HERE.parent

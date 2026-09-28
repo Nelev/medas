@@ -1,7 +1,6 @@
-"""Index the medical record into pgvector: uv run python -m langchain_agent.rag"""
+"""Index the medical record into pgvector: uv run python -m rag_pipeline.ingest"""
 
 import asyncio
-import json
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -10,25 +9,11 @@ from langchain_core.documents import Document
 from database.database import dispose_engine, init_engine
 from rag_pipeline.chunks import iter_chunks
 from rag_pipeline.pdf import aindex_pdfs
+from rag_pipeline.record import load_record
 from rag_pipeline.vector_store import init_vector_store
 
-MEDICAL_HISTORY_PATH = (
-    Path(__file__).parent.parent / "rag_pipeline" / "medical_history.json"
-)
 # The seeded patient's PDFs. Synthetic for now; see dataset/README.md.
 DOCUMENTS_PATH = Path(__file__).parent.parent / "dataset" / "documents"
-
-
-def load_record() -> dict:
-    with MEDICAL_HISTORY_PATH.open(encoding="utf-8") as f:
-        return json.load(f)
-
-
-def find_record(record_id: str) -> dict | None:
-    """The record with this id, or None. One seeded record for now: any other
-    id has none."""
-    record = load_record()
-    return record if record["id"] == record_id else None
 
 
 def load_documents(record: dict) -> list[Document]:

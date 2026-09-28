@@ -164,7 +164,7 @@ Two things that trip people up: who is asking, and the name the greeting address
 The route does not run a tool loop of its own. It assembles the conversation, hands it to a LangChain agent, and stores what comes back.
 
 1. **Assembles the turns.** Every stored message becomes `{role, content}` — the wire calls the field `text`, a chat model calls it `content` — and the new question goes last. The whole thread is sent, so the model answers in the context of everything said before rather than the last message alone.
-2. **Runs the agent.** [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py) is a `create_agent` graph with three tools (a search, and two for adding a PDF the patient attaches) and [`agent/assistant_general_prompt.py`](medas-api/agent/assistant_general_prompt.py) as its system prompt. The graph decides for itself whether to search, how many times, and when it has enough to answer — which is the thing the hand-rolled loop this replaced could not do.
+2. **Runs the agent.** [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py) is a `create_agent` graph with two tools (a search, and one for adding a PDF the patient attaches) and [`langchain_agent/assistant_general_prompt.py`](medas-api/langchain_agent/assistant_general_prompt.py) as its system prompt. The graph decides for itself whether to search, how many times, and when it has enough to answer — which is the thing the hand-rolled loop this replaced could not do.
 3. **Searches when it asks to.** The model cannot reach the vector store; only this process can, so a tool call is a question rather than an answer. `search_patient_record(query)` takes **only** a query: whose record is searched is fixed by the service, not chosen by the model, so a message claiming a different record id cannot become a read of somebody else's chart.
 4. **Reads the reply.** The prompt specifies one JSON object, so the route parses it for `message` — what the patient sees — and stores `severity` and `confidence` as metadata.
 
@@ -205,7 +205,7 @@ The agent answers from passages of the patient's own record, retrieved while it 
 
 ```mermaid
 flowchart LR
-  subgraph ingest["Ingest: uv run python -m langchain_agent.rag"]
+  subgraph ingest["Ingest: uv run python -m rag_pipeline.ingest"]
     J["medical_history.json"] --> C["chunks.py: one chunk per record entry"]
     P["dataset/documents/*.pdf"] --> G{"pdf.py: five checks"}
     G -->|accepted| S["PDFPlumberLoader, then RecursiveCharacterTextSplitter"]
@@ -226,7 +226,7 @@ Build or refresh the index with one command. It makes one billable embedding cal
 
 ```bash
 cd medas-api
-uv run python -m langchain_agent.rag
+uv run python -m rag_pipeline.ingest
 ```
 
 ### 1. Chunking the record
@@ -263,7 +263,7 @@ The hidden-text check reads characters with pdfplumber directly, because the Lan
 
 ### 3. Embedding and the index
 
-[`langchain_agent/rag.py`](medas-api/langchain_agent/rag.py) embeds every chunk with `openai/text-embedding-3-small` through OpenRouter and upserts it into `record_chunks`, keyed on the chunk id. Re-running replaces rows rather than adding to them. The embedding calls sit behind `run()`, so importing the module fires nothing.
+[`rag_pipeline/ingest.py`](medas-api/rag_pipeline/ingest.py) embeds every chunk with `openai/text-embedding-3-small` through OpenRouter and upserts it into `record_chunks`, keyed on the chunk id. Re-running replaces rows rather than adding to them. The embedding calls sit behind `run()`, so importing the module fires nothing.
 
 `record_chunks` is a pgvector table with a `vector(1536)` column, owned by Alembic ([`model/record_chunk.py`](medas-api/model/record_chunk.py)) like every other table. `PGVectorStore` reads and writes it but never creates it. `patient_id` is a real, indexed column rather than a key in the JSON metadata, so the filter every search applies is an indexed `WHERE`. `kind` is a plain column. The store is one shared definition, [`rag_pipeline/vector_store.py`](medas-api/rag_pipeline/vector_store.py). Ingest and search both go through it, so they can't drift onto different embedding models or tables.
 
@@ -279,15 +279,13 @@ The 12 PDF chunks come from D01–D08 and D13. D02 and D13 have two pages each, 
 
 ### 4. Retrieval
 
-The first tool, `search_patient_record(query)`, wraps [`agent/search.py`](medas-api/agent/search.py) (`search_record`). The model decides whether to search, what to search for and how many times, and sends only the query. The patient is fixed by the service: `/ask` passes `pat_{users.id}` to the run as LangChain runtime context, and the tool reads it from there. It's never a tool argument, so a message claiming another record id can't become a read of someone else's chart.
+The first tool, `search_patient_record(query)`, wraps [`rag_pipeline/search.py`](medas-api/rag_pipeline/search.py) (`search_record`). The model decides whether to search, what to search for and how many times, and sends only the query. The patient is fixed by the service: `/ask` passes `pat_{users.id}` to the run as LangChain runtime context, and the tool reads it from there. It's never a tool argument, so a message claiming another record id can't become a read of someone else's chart.
 
-A second tool, `add_patient_document(document)`, adds a PDF the patient attaches to their message, over [`agent/documents.py`](medas-api/agent/documents.py) (`add_document`). There is no staging table: the file travels in the run's context (`RecordContext.attachments`, passed to `answer(..., attachments=)`) and lives no longer than the run. The model only names an attachment by file name; any other name is refused. Checking and storing are one call, so there is no order for the model to get wrong: `load_pdf`'s checks, then `averify`, then the store write, and a refusal at either check stores nothing. The tool never returns the document's text to the model: the file is untrusted, and this agent can write to the record.
+A second tool, `add_patient_document(document)`, adds a PDF the patient attaches to their message, over [`langchain_agent/documents.py`](medas-api/langchain_agent/documents.py) (`add_document`). There is no staging table: the file travels in the run's context (`RecordContext.attachments`, passed to `answer(..., attachments=)`) and lives no longer than the run. The model only names an attachment by file name; any other name is refused. Checking and storing are one call, so there is no order for the model to get wrong: `load_pdf`'s checks, then `averify`, then the store write, and a refusal at either check stores nothing. The tool never returns the document's text to the model: the file is untrusted, and this agent can write to the record.
 
 Each search embeds the query with the same model as the corpus. It returns the 5 nearest passages, filtered on `patient_id` in the SQL, each with its `chunk_id`, text and cosine distance (lower is nearer). The store returns its 5 nearest whether or not any of them are near, so the distance is the only signal that nothing relevant was found. An account with no indexed record gets no passages, and is told its record shows nothing relevant.
 
 The store is opened once, in the app's lifespan, with `PGEngine.from_engine` on the app's own asyncpg engine: one connection pool, sized and pre-pinged by `DbSettings` and disposed at shutdown. `from_connection_string` would open a second pool on a background thread. A missing `record_chunks` table therefore fails at boot rather than on the first question.
-
-The older Chroma pipeline (`uv run python -m rag_pipeline.run`, into `rag_pipeline/chroma/`) still builds, but nothing reads it any more.
 
 ### 5. How each stage is measured
 
@@ -351,17 +349,17 @@ The search loop is capped at 25 steps here (`recursion_limit`), so one runaway q
 
 ### Running it
 
-The eval needs the database up, migrated and indexed, with all three patients in it, plus `OPENROUTER_API_KEY` in `medas-api/.env`. `langchain_agent.rag` indexes the seeded record and the PDFs. The other two records are indexed with the same `load_documents`:
+The eval needs the database up, migrated and indexed, with all three patients in it, plus `OPENROUTER_API_KEY` in `medas-api/.env`. `rag_pipeline.ingest` indexes the seeded record and the PDFs. The other two records are indexed with the same `load_documents`:
 
 ```bash
 cd medas-api
-uv run python -m langchain_agent.rag
+uv run python -m rag_pipeline.ingest
 uv run python - <<'EOF'
 import asyncio, json
 from dotenv import load_dotenv
 load_dotenv(".env")  # by path: find_dotenv cannot locate it from stdin
 from database.database import dispose_engine, init_engine
-from langchain_agent.rag import load_documents
+from rag_pipeline.ingest import load_documents
 from rag_pipeline.vector_store import init_vector_store
 
 async def main():
@@ -627,4 +625,3 @@ Then the smaller ones:
 - **No history on reload.** `GET /conversations/{id}` exists, but nothing calls it: the UI keeps the history it was given in memory, so a refresh returns to the greeting with the stored conversation orphaned.
 - **No idempotency.** A double-submitted first message creates two conversations.
 - **A submit before hydration is lost.** The composer uses an `onSubmit` handler rather than a form action, so a submission made before React hydrates navigates to `/?message=…` and the message is dropped. React queues submissions for a `<form action={…}>`; a plain handler cannot.
-- **Chroma is still in the tree.** `chromadb`, `rag_pipeline/run.py` and `rag_pipeline/embeddings.py`'s batch helpers served the old index and can go.

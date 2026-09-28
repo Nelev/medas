@@ -6,6 +6,7 @@ The dataset's "today" is **2026-09-28**. Some questions ("next appointment", "wh
 
 ```
 dataset/
+  records/medical_history.json   the seeded patient (Mattia Smacchia), indexed by rag_pipeline.ingest
   records/pat_ferrante.json      second patient, for isolation and per-record answers
   records/pat_okoro.json         sparse, pregnant, edge-case record
   documents/D01..D16_*.pdf       PDFs for the seeded patient (Mattia Smacchia)
@@ -22,7 +23,7 @@ uv run --with reportlab --with pypdf python dataset/generate_pdfs.py
 
 ## What the new data adds to the seeded record
 
-The documents follow on from `rag_pipeline/medical_history.json`, whose latest entry is the 2026-07-28 annual review:
+The documents follow on from `records/medical_history.json`, whose latest entry is the 2026-07-28 annual review:
 
 | Date       | Doc | What happens                                                                                 |
 | ---------- | --- | -------------------------------------------------------------------------------------------- |
@@ -64,7 +65,7 @@ There are three deliberate conflicts. D03 contradicts `current_medication` in th
 
 ## Ingest pipeline for PDFs
 
-[`rag_pipeline/pdf.py`](../rag_pipeline/pdf.py) (`aindex_pdfs`) runs every PDF in `dataset/documents/` through five checks, from `langchain_agent/rag.py`. A refused file is printed with its reason and contributes no chunks, and one bad file never stops the batch.
+[`rag_pipeline/pdf.py`](../rag_pipeline/pdf.py) (`aindex_pdfs`) runs every PDF in `dataset/documents/` through five checks, from `rag_pipeline/ingest.py`. A refused file is printed with its reason and contributes no chunks, and one bad file never stops the batch.
 
 | #   | Check          | Rule                                                             | Stops                                              |
 | --- | -------------- | ---------------------------------------------------------------- | -------------------------------------------------- |
@@ -101,7 +102,7 @@ Ingest keeps unrelated documents out. These keep unrelated _questions_ and weak 
 
 ## Using the extra patients
 
-`agent/patient.py` derives the record id as `pat_{users.id}`. Retrieval-isolation tests only need the chunks, so ingest the records with those ids. To _chat_ as Ferrante or Okoro end to end, you need a `users` row whose id is the uuid after `pat_`. `chunks.py` handles both files as they are, and Okoro's empty `pathologies` yields no chunks, as intended.
+`langchain_agent/patient.py` derives the record id as `pat_{users.id}`. Retrieval-isolation tests only need the chunks, so ingest the records with those ids. To _chat_ as Ferrante or Okoro end to end, you need a `users` row whose id is the uuid after `pat_`. `chunks.py` handles both files as they are, and Okoro's empty `pathologies` yields no chunks, as intended.
 
 ## Evaluation
 

@@ -7,10 +7,10 @@ import uuid
 import pytest
 from fastapi import UploadFile
 
-import langchain_agent.rag as rag
-from agent.documents import Attachment
+import rag_pipeline.record as records
 from controller import documents
 from controller.documents import DocumentNotStored, RecordNotFound, index_upload
+from langchain_agent.documents import Attachment
 
 USER_ID = uuid.uuid4()
 RECORD = {"id": f"pat_{USER_ID}", "name": "Mattia", "dob": "1980-06-07"}
@@ -19,7 +19,7 @@ RECORD = {"id": f"pat_{USER_ID}", "name": "Mattia", "dob": "1980-06-07"}
 @pytest.fixture(autouse=True)
 def record(monkeypatch):
     # Under find_record, so its id check is the real one.
-    monkeypatch.setattr(rag, "load_record", lambda: RECORD)
+    monkeypatch.setattr(records, "load_record", lambda: RECORD)
 
 
 def agent_replies(monkeypatch, message: str, stored: dict) -> list:

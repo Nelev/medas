@@ -1,1 +1,1 @@
-"""Retrieval pipeline: embedding and, later, retrieval helpers."""
+"""Retrieval pipeline: chunking, checking and indexing the record, and search."""

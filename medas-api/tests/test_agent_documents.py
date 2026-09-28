@@ -1,10 +1,10 @@
-"""agent.documents: an attached PDF is checked, then stored, against one record."""
+"""langchain_agent.documents: an attached PDF is checked, then stored, against one record."""
 
 import pytest
 
-import agent.documents as documents
-import langchain_agent.rag as rag
-from agent.documents import Attachment, add_document
+import langchain_agent.documents as documents
+import rag_pipeline.record as records
+from langchain_agent.documents import Attachment, add_document
 from rag_pipeline.pdf import LoadedPdf, Rejected
 
 RECORD = {"id": "pat_1", "name": "Mattia", "dob": "1980-06-07"}
@@ -33,7 +33,7 @@ def seen(monkeypatch) -> dict:
         seen["verified"] = (text, record)
 
     # Under find_record, so its id check is the real one.
-    monkeypatch.setattr(rag, "load_record", lambda: RECORD)
+    monkeypatch.setattr(records, "load_record", lambda: RECORD)
     monkeypatch.setattr(documents, "load_pdf", fake_load_pdf)
     monkeypatch.setattr(documents, "averify", fake_averify)
     return seen
