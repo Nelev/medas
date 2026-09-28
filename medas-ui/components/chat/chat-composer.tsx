@@ -1,11 +1,21 @@
 "use client"
-import { SendHorizontal, TriangleAlert } from "lucide-react"
-import { SyntheticEvent } from "react"
+import { Paperclip, SendHorizontal, TriangleAlert } from "lucide-react"
+import { ChangeEvent, SyntheticEvent, useRef } from "react"
 
-import { ask } from "@/api/chat"
+import { ask, uploadPdf } from "@/api/chat"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { useChatStore } from "@/store/store"
+
+// The banner's text: what went wrong, then what it cost the user.
+const failure = (cause: unknown, fallback: string, consequence: string) =>
+  `${cause instanceof Error ? cause.message : fallback} ${consequence}`
 
 export function ChatComposer() {
   const conversationId = useChatStore((s) => s.conversationId)
@@ -14,6 +24,7 @@ export function ChatComposer() {
   const receiveTurns = useChatStore((s) => s.receiveTurns)
   const setPending = useChatStore((s) => s.setPending)
   const setError = useChatStore((s) => s.setError)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const handleSubmit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -50,7 +61,38 @@ export function ChatComposer() {
       // just vanish.
       setPending(null)
       setError(
-        cause instanceof Error ? cause.message : "Could not send that message.",
+        failure(
+          cause,
+          "Could not send that message.",
+          "Your message was not sent.",
+        ),
+      )
+    }
+  }
+
+  // Uploads as soon as a file is picked: there is no attachment to hold.
+  const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const file = input.files?.[0]
+    // Reset so picking the same file again still fires a change.
+    input.value = ""
+
+    if (!file) return
+
+    const formData = new FormData()
+    formData.append("file", file)
+
+    setError("")
+
+    try {
+      await uploadPdf(formData)
+    } catch (cause) {
+      setError(
+        failure(
+          cause,
+          "Could not upload that PDF.",
+          "Your PDF was not uploaded.",
+        ),
       )
     }
   }
@@ -64,10 +106,7 @@ export function ChatComposer() {
           className="border-destructive/25 bg-destructive/8 text-destructive mb-2.5 flex items-start gap-2 rounded-2xl border px-3.5 py-2.5 text-xs"
         >
           <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
-          <span>
-            {error}{" "}
-            <span className="opacity-80">Your message was not sent.</span>
-          </span>
+          <span>{error}</span>
         </p>
       ) : null}
 
@@ -86,15 +125,46 @@ export function ChatComposer() {
           autoComplete="off"
           className="h-9 flex-1 border-0 bg-transparent px-0 text-[0.9375rem] shadow-none focus-visible:border-0 focus-visible:ring-0"
         />
-        <Button
-          type="submit"
-          size="icon"
-          aria-label="Send message"
-          disabled={pending !== null}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-primary/30 size-9 shrink-0 rounded-full shadow-md"
-        >
-          <SendHorizontal className="size-4" aria-hidden />
-        </Button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/pdf"
+          aria-label="PDF file"
+          hidden
+          onChange={handleUpload}
+        />
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label="Upload document"
+                disabled={pending !== null}
+                onClick={() => fileRef.current?.click()}
+                className="size-9 shrink-0 rounded-full"
+              >
+                <Paperclip className="size-4" aria-hidden />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Upload document</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="submit"
+                size="icon"
+                aria-label="Send message"
+                disabled={pending !== null}
+                className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-primary/30 size-9 shrink-0 rounded-full shadow-md"
+              >
+                <SendHorizontal className="size-4" aria-hidden />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Send message</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </form>
 
       <p className="text-muted-foreground mt-2.5 px-1 text-center text-[0.65rem] leading-relaxed tracking-[0.01em]">

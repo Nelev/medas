@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { ask } from "@/api/chat"
+import { ask, uploadPdf } from "@/api/chat"
 import { ChatComposer } from "@/components/chat/chat-composer"
 import { useChatStore } from "@/store/store"
 import {
@@ -20,9 +20,11 @@ import {
 // composer passes it and what it does with the answer.
 vi.mock("@/api/chat", () => ({
   ask: vi.fn(),
+  uploadPdf: vi.fn(),
 }))
 
 const mockedAsk = vi.mocked(ask)
+const mockedUploadPdf = vi.mocked(uploadPdf)
 
 const send = async (text: string) => {
   const user = userEvent.setup()
@@ -325,6 +327,38 @@ describe("ChatComposer", () => {
 
       await waitFor(() =>
         expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
+      )
+    })
+  })
+
+  describe("uploading a PDF", () => {
+    const pdf = new File(["%PDF-1.4"], "record.pdf", {
+      type: "application/pdf",
+    })
+
+    beforeEach(() => {
+      mockedUploadPdf.mockReset()
+    })
+
+    it("sends the picked file", async () => {
+      mockedUploadPdf.mockResolvedValue()
+      render(<ChatComposer />)
+
+      await userEvent.upload(screen.getByLabelText("PDF file"), pdf)
+
+      await waitFor(() => expect(mockedUploadPdf).toHaveBeenCalledTimes(1))
+      const formData = mockedUploadPdf.mock.calls[0][0]
+      expect(formData.get("file")).toBe(pdf)
+    })
+
+    it("shows the failure", async () => {
+      mockedUploadPdf.mockRejectedValue(new Error("Failed to fetch"))
+      render(<ChatComposer />)
+
+      await userEvent.upload(screen.getByLabelText("PDF file"), pdf)
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Your PDF was not uploaded",
       )
     })
   })

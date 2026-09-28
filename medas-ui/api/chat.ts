@@ -33,23 +33,29 @@ interface AskResult {
   turns: StoredMessage[]
 }
 
+// The fetch and status check every POST shares, whatever its body.
+const send = async (url: string, init: RequestInit): Promise<Response> => {
+  const response = await fetch(url, { method: "POST", ...init })
+
+  if (!response.ok) {
+    throw new Error(`Request to ${url} failed (${response.status})`)
+  }
+
+  return response
+}
+
 const post = async <T>(
   url: string,
   body: unknown,
   headers: Record<string, string>,
 ): Promise<T> => {
-  const response = await fetch(url, {
-    method: "POST",
+  const response = await send(url, {
     headers: {
       "Content-Type": "application/json",
       ...headers,
     },
     body: JSON.stringify(body),
   })
-
-  if (!response.ok) {
-    throw new Error(`Request to ${url} failed (${response.status})`)
-  }
 
   // As in api/init.ts, this annotates the payload rather than validating it.
   const data: T = await response.json()
@@ -91,5 +97,13 @@ const ask = async (
   return { conversationId: data.conversation_id, turns: data.messages }
 }
 
-export { ask }
+// Sends a PDF from the composer to the API. The FormData goes through as is,
+// and no Content-Type is set, so fetch writes the multipart boundary itself.
+const uploadPdf = async (formData: FormData): Promise<void> => {
+  const headers = await authorization()
+
+  await send(`${API_BASE_URL}/documents`, { headers, body: formData })
+}
+
+export { ask, uploadPdf }
 export type { AskResult, StoredMessage }
