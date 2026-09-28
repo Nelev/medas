@@ -10,9 +10,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import CurrentUser, GreetingName, get_auth_settings
-from controller import NotFound, ask_question, get_conversation
+from controller import NotFound, ask_question, get_conversation, index_upload
 from database.database import dispose_engine, get_session, init_engine
 from model import greeting_text
+from rag_pipeline.pdf import Rejected
 from rag_pipeline.vector_store import init_vector_store
 from schema import NewMessage
 
@@ -48,6 +49,13 @@ async def not_found(_: Request, exc: NotFound) -> JSONResponse:
     # One mapping for every route: a conversation that is someone else's is
     # only indistinguishable from a missing one if every route answers alike.
     return JSONResponse(status_code=404, content={"detail": exc.detail})
+
+
+@app.exception_handler(Rejected)
+async def rejected(_: Request, exc: Rejected) -> JSONResponse:
+    # A document that does not belong in the record, from any route that
+    # indexes one; the reason is the message.
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 
 # No CORS middleware: the browser never calls this API directly. The UI's
@@ -94,10 +102,13 @@ async def read_conversation(
 
 
 @app.post("/documents")
-async def upload_document(file: UploadFile, _: CurrentUser):
-    # A placeholder for the composer's upload: the file is accepted and
-    # dropped. Nothing is stored or indexed yet.
-    return {"status": "ok"}
+async def upload_document(file: UploadFile, user_id: CurrentUser):
+    """Index a PDF into the signed-in user's record, for the agent to search.
+
+    A file that does not belong to the record (no date of birth, hidden text,
+    unreadable) is a 422 with the reason, and nothing is stored.
+    """
+    return {"status": "ok", "chunks": await index_upload(user_id, file)}
 
 
 @app.get("/health/db")

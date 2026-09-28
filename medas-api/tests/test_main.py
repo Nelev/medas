@@ -18,9 +18,11 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 import controller.conversation
+import main
 from auth import current_user, greeting_name
 from database.database import get_session
 from main import app
+from rag_pipeline.pdf import Rejected
 
 SERVER_VERSION = "18.0 (Debian 18.0-1)"
 
@@ -586,11 +588,29 @@ async def test_every_other_route_is_401_signed_out(
 PDF = {"file": ("record.pdf", b"%PDF-1.4", "application/pdf")}
 
 
-async def test_documents_accepts_an_upload(client):
+async def test_documents_indexes_the_upload(client, monkeypatch):
+    async def fake_index_upload(user_id, file):
+        assert user_id == USER_ID
+        return 3
+
+    monkeypatch.setattr(main, "index_upload", fake_index_upload)
+
     response = await client.post("/documents", files=PDF)
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {"status": "ok", "chunks": 3}
+
+
+async def test_a_refused_document_is_422_with_the_reason(client, monkeypatch):
+    async def fake_index_upload(user_id, file):
+        raise Rejected("not this patient")
+
+    monkeypatch.setattr(main, "index_upload", fake_index_upload)
+
+    response = await client.post("/documents", files=PDF)
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "not this patient"}
 
 
 async def test_documents_signed_out_is_401(client, signed_out):
