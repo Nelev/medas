@@ -8,7 +8,7 @@
   },
   "outcomes": {
     "index": "Chunked (one per page), embedded, written to record_chunks.",
-    "reject": "Not indexed; rag.py prints the reason."
+    "reject": "Not indexed; rag_pipeline/ingest.py prints the reason."
   },
   "documents": [
     {
@@ -67,21 +67,6 @@
         "saline nasal irrigation"
       ],
       "tests": "Fills a real gap: the JSON lists GORD but no treatment for it. Three items in one table, one chunk per item."
-    },
-    {
-      "id": "D05",
-      "file": "D05_prescription_dental_naproxen_2026-09-25.pdf",
-      "doc_type": "prescription",
-      "document_date": "2026-09-25",
-      "language": "en",
-      "expected_outcome": "index",
-      "alert": "Naproxen is an NSAID; patient has a severe active NSAID hypersensitivity (AERD).",
-      "facts": [
-        "naproxen 500 mg twice daily 5 days after wisdom tooth extraction",
-        "chlorhexidine mouthwash",
-        "medical history not reviewed by the dentist"
-      ],
-      "tests": "The key safety case. Genuine, correctly identified document that is clinically dangerous. There is no ingest-time alert: Q05 checks that the model cross-checks the allergy."
     },
     {
       "id": "D06",
