@@ -1,6 +1,6 @@
 # Synthetic test dataset
 
-Test data for the retrieval and document-ingest paths: two more patient records, 16 PDFs for the seeded patient (appointments, prescriptions, a lab report, letters, and the documents that must be turned away), and 32 evaluation questions. **Everything here is invented.** The people, clinicians, organisations, hospital numbers and phone numbers are all fictional (phone numbers use the 01632 960 range, which Ofcom reserves for drama).
+Test data for the retrieval and document-ingest paths: two more patient records, 15 PDFs for the seeded patient (appointments, prescriptions, a lab report, letters, and the documents that must be turned away), and 32 evaluation questions. **Everything here is invented.** The people, clinicians, organisations, hospital numbers and phone numbers are all fictional (phone numbers use the 01632 960 range, which Ofcom reserves for drama).
 
 The dataset's "today" is **2026-09-28**. Some questions ("next appointment", "which injection now") only have one right answer relative to that date.
 
@@ -9,7 +9,7 @@ dataset/
   records/medical_history.json   the seeded patient (Mattia Smacchia), indexed by rag_pipeline.ingest
   records/pat_ferrante.json      second patient, for isolation and per-record answers
   records/pat_okoro.json         sparse, pregnant, edge-case record
-  documents/D01..D16_*.pdf       PDFs for the seeded patient (Mattia Smacchia)
+  documents/D01..D16_*.pdf       PDFs for the seeded patient (Mattia Smacchia); D05 was removed
   documents/manifest.json        the expected ingest outcome for each PDF, and why
   generate_pdfs.py               rebuilds the PDFs
   eval/questions.jsonl           questions, the sources each answer must cite, the expected severity
@@ -34,17 +34,16 @@ The documents follow on from `records/medical_history.json`, whose latest entry 
 | 2026-09-10 | D02 | ENT: nasal polyps have come back; switch mepolizumab to dupilumab; follow-up 3 Dec           |
 | 2026-09-15 | D01 | Physio appointment on 14 Oct                                                                 |
 | 2026-09-22 | D03 | Dupilumab prescribed from 6 Oct, **mepolizumab discontinued**                                |
-| 2026-09-25 | D05 | Dentist prescribes **naproxen**, an NSAID, to a patient with a severe NSAID hypersensitivity |
 | 2026-09-26 | D07 | ENT follow-up **moved** from 3 Dec to 17 Dec                                                 |
 
-There are three deliberate conflicts. D03 contradicts `current_medication` in the JSON, D07 contradicts D02, and D05 contradicts the allergy list. Real records contain conflicts like these all the time, and they're the cases a retrieval-only system gets wrong.
+There are two deliberate conflicts. D03 contradicts `current_medication` in the JSON, and D07 contradicts D02. Real records contain conflicts like these all the time, and they're the cases a retrieval-only system gets wrong.
 
 ## Edge cases covered
 
 | Case                                         | Where                   | What breaks without a safeguard                                                 |
 | -------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------- |
 | Newer source supersedes older                | D03 vs JSON, D07 vs D02 | Assistant says "you're on mepolizumab" or gives the cancelled date              |
-| Genuine but dangerous prescription           | D05                     | Assistant confirms the painkiller the patient was handed                        |
+| Drug the allergy list rules out              | Q05                     | Assistant says the painkiller the patient was offered is fine                   |
 | Tables, units, `<` / `>` symbols             | D06, D04, D03           | "28" without "nmol/L" and its range means nothing                               |
 | Repeated header/footer, page break           | D02                     | Boilerplate chunks crowd the top-k, and the plan is split away from its context |
 | Non-English document                         | D08, Q11                | An English query misses the passage, or the reply switches language             |

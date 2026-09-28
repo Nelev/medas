@@ -331,42 +331,6 @@ def d04_gp_prescription() -> Path:
     )
 
 
-def d05_dental_naproxen() -> Path:
-    story = [
-        p("Private prescription", H1),
-        _patient_block(hospital_no="(not recorded)"),
-        Spacer(1, 6),
-        p("Date: 25 September 2026"),
-        p("Prescriber: Dr L. Brannigan BDS, Riverside Dental Practice"),
-        p("Procedure: surgical extraction of lower left third molar (38)."),
-        _grid(
-            [
-                ["Medicine", "Directions", "Quantity"],
-                [
-                    "Naproxen 500 mg tablets",
-                    "One tablet twice daily with food for 5 days",
-                    "10 tablets",
-                ],
-                [
-                    "Chlorhexidine 0.2% mouthwash",
-                    "Rinse 10 mL twice daily from tomorrow for 7 days",
-                    "300 mL",
-                ],
-            ],
-            [60, 80, 25],
-        ),
-        Spacer(1, 6),
-        p("Medical history questionnaire: [ ] reviewed &nbsp; [x] not available"),
-    ]
-    return _build(
-        "D05_prescription_dental_naproxen_2026-09-25.pdf",
-        story,
-        "Riverside Dental Practice",
-        "Private dental care - 88 Quay Street, Northbridge",
-        "Private prescription - not valid for NHS dispensing.",
-    )
-
-
 def d06_lab_report() -> Path:
     rows = [
         ["Test", "Result", "Units", "Reference range", "Flag"],
@@ -654,7 +618,6 @@ def main() -> None:
     d02_ent_letter()
     d03 = d03_dupilumab_prescription()
     d04 = d04_gp_prescription()
-    d05_dental_naproxen()
     d06_lab_report()
     d07_ent_rescheduled()
     d08_italian_report()

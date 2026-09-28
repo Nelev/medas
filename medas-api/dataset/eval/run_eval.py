@@ -162,7 +162,7 @@ async def _run_one(
         row["reply"] = None
     message = (row["reply"] or {}).get("message") or run["raw"]
     row["message"] = message
-    # must_cite names a document (D05) or a record chunk (allergy:00);
+    # must_cite names a document (D02) or a record chunk (allergy:00);
     # resolve both to the chunk-id prefix they are stored under.
     row["cite_prefixes"] = [prefixes.get(c, c) for c in q.get("must_cite", [])]
     judgement, row["rag"] = await asyncio.gather(
