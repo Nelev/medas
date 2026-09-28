@@ -583,6 +583,22 @@ async def test_every_other_route_is_401_signed_out(
     assert response.status_code == 401
 
 
+PDF = {"file": ("record.pdf", b"%PDF-1.4", "application/pdf")}
+
+
+async def test_documents_accepts_an_upload(client):
+    response = await client.post("/documents", files=PDF)
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+async def test_documents_signed_out_is_401(client, signed_out):
+    response = await client.post("/documents", files=PDF)
+
+    assert response.status_code == 401
+
+
 async def test_health_stays_public(client, fake_session, signed_out):
     # What a load balancer polls; it knows no user and reads no record.
     response = await client.get("/health/db")

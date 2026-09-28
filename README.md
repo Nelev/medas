@@ -145,12 +145,13 @@ Both suites are unit-only by design — no database, no API, no model, no browse
 
 ## API surface
 
-| Method | Path                           | Request        | Response                                                         |
-| ------ | ------------------------------ | -------------- | ---------------------------------------------------------------- |
-| `GET`  | `/`                            | —              | `{messages: [{role, text}]}` — the greeting, not persisted       |
-| `POST` | `/ask[?conversationId=<uuid>]` | `{role, text}` | `201 {conversation_id, messages}` — the turns this request added |
-| `GET`  | `/conversations/{id}`          | —              | `{conversation_id, messages}` — the whole history, oldest first  |
-| `GET`  | `/health/db`                   | —              | `{status, server_version}`                                       |
+| Method | Path                           | Request          | Response                                                         |
+| ------ | ------------------------------ | ---------------- | ---------------------------------------------------------------- |
+| `GET`  | `/`                            | —                | `{messages: [{role, text}]}` — the greeting, not persisted       |
+| `POST` | `/ask[?conversationId=<uuid>]` | `{role, text}`   | `201 {conversation_id, messages}` — the turns this request added |
+| `GET`  | `/conversations/{id}`          | —                | `{conversation_id, messages}` — the whole history, oldest first  |
+| `POST` | `/documents`                   | multipart `file` | `{status: "ok"}` — accepted and dropped; nothing is stored yet   |
+| `GET`  | `/health/db`                   | —                | `{status, server_version}`                                       |
 
 `POST /ask` returns **what it added**, not the whole thread: three turns when it started the conversation (the greeting, the question, the answer) and two when it appended (the question and the answer). Either way the client appends them to what it already has.
 
