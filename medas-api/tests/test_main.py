@@ -603,7 +603,7 @@ async def test_an_upload_starts_a_conversation(
     assert body["conversation_id"] == str(fake_session.conversation_id)
     assert [(m["role"], m["text"]) for m in body["messages"]] == [
         ("assistant", f"Hi {SEEDED_NAME}, how can I help you?"),
-        ("user", "upload file requested"),
+        ("user", "upload file requested: record.pdf"),
         ("assistant", AGENT_REPLY),
     ]
     # Asked about the file alone, not the conversation around it.
@@ -621,7 +621,7 @@ async def test_an_upload_joins_the_conversation(client, fake_session, has_record
 
     assert response.status_code == 201
     assert [(m["role"], m["text"]) for m in response.json()["messages"]] == [
-        ("user", "upload file requested"),
+        ("user", "upload file requested: record.pdf"),
         ("assistant", AGENT_REPLY),
     ]
 
