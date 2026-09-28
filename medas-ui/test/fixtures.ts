@@ -1,4 +1,5 @@
 import type { ChatMessageProps } from "@/model/ChatMessage"
+import type { ConversationSummary } from "@/model/Conversation"
 
 // The shapes medas-api actually returns. Kept in one place so a change to the
 // API contract is a one-file edit here rather than a hunt through specs.
@@ -53,6 +54,15 @@ const askedTurns = {
   messages: [storedMessage, storedReply],
 }
 
+// The sidebar's rows, as api/conversations.ts hands them over: newest first.
+const conversationList: ConversationSummary[] = [
+  { conversationId: CONVERSATION_ID, title: firstMessage.text },
+  {
+    conversationId: "7d2e4b91-3f6a-4c8e-a5b7-9e0f1c2d3a4b",
+    title: "What were my last blood test results?",
+  },
+]
+
 // A fetch Response is only ever consumed here through ok/status/json(), so a
 // stub with those three is enough and keeps the failure cases readable.
 const jsonResponse = (body: unknown, status = 200) =>
@@ -73,6 +83,7 @@ export {
   storedReply,
   createdConversation,
   askedTurns,
+  conversationList,
   jsonResponse,
   asChatMessage,
 }

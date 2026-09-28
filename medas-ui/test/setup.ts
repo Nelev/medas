@@ -15,6 +15,18 @@ globalThis.ResizeObserver ??= class {
 }
 
 beforeEach(() => {
+  // jsdom has no matchMedia, and the sidebar asks it whether it is on a
+  // phone. Stubbed per test, since the afterEach unstubs globals; a spec can
+  // still stub its own answer over this one.
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn(() => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  )
+
   // The zustand store is a module singleton, so state survives between tests
   // and whichever ran first would silently decide the result of the next.
   // Replaced with the store's own initial state, actions included, so a new
