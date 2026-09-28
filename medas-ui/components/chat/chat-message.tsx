@@ -29,7 +29,7 @@ export function ChatMessage({ role, text, severity }: ChatMessageProps) {
           // Stored with the turn and returned in the payload since the API
           // started triaging; this is where it finally shows.
           <span
-            className={`mt-1.5 inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[0.625rem] tracking-[0.04em] uppercase ${
+            className={`mt-1.5 inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[0.6875rem] tracking-[0.04em] uppercase ${
               isUrgent
                 ? "border-pulse/45 text-pulse"
                 : "border-primary/30 text-primary"

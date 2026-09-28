@@ -37,6 +37,17 @@ const useChatStore = create(
           messages: [...s.messages, ...turns],
           pending: null,
         })),
+      // A past conversation opened from the sidebar: its whole history
+      // replaces what the store holds, and its id is the one the next send
+      // appends to.
+      loadConversation: (
+        conversationId: string,
+        messages: ChatMessageProps[],
+      ) => set({ conversationId, messages, error: "" }),
+      // Back to the greeting: with no messages the chat falls back to the one
+      // the page fetched, and with no id the next send creates a conversation.
+      startConversation: () =>
+        set({ conversationId: "", messages: [], error: "" }),
       setPending: (pending: ChatMessageProps | null) => set({ pending }),
       setError: (error: string) => set({ error }),
       setIsUploadingDocument: (isUploadingDocument: boolean) =>

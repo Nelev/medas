@@ -102,14 +102,17 @@
   --chart-4: oklch(0.72 0.12 75);
   --chart-5: oklch(0.6 0.17 32);
   --radius: 1.125rem;
-  --sidebar: oklch(0.982 0.007 85);
+  /* A step off the page, so the sidebar is a surface of its own rather
+     than a strip of the backdrop. */
+  --sidebar: oklch(0.968 0.008 85);
   --sidebar-foreground: oklch(0.22 0.02 175);
   --sidebar-primary: oklch(0.42 0.09 178);
   --sidebar-primary-foreground: oklch(0.99 0.01 180);
-  --sidebar-accent: oklch(0.94 0.012 150);
+  --sidebar-accent: oklch(0.925 0.014 150);
   --sidebar-accent-foreground: oklch(0.28 0.03 175);
   --sidebar-border: oklch(0.9 0.01 88);
-  --sidebar-ring: oklch(0.6 0.17 32);
+  /* Green, not coral: tabbing through the list is not urgent. */
+  --sidebar-ring: oklch(0.42 0.09 178);
 }
 
 .dark {
@@ -149,14 +152,14 @@
   --chart-3: oklch(0.75 0.11 120);
   --chart-4: oklch(0.8 0.12 80);
   --chart-5: oklch(0.72 0.15 36);
-  --sidebar: oklch(0.17 0.018 180);
+  --sidebar: oklch(0.195 0.018 180);
   --sidebar-foreground: oklch(0.96 0.006 170);
   --sidebar-primary: oklch(0.78 0.12 172);
   --sidebar-primary-foreground: oklch(0.2 0.04 180);
-  --sidebar-accent: oklch(0.25 0.025 170);
+  --sidebar-accent: oklch(0.265 0.025 170);
   --sidebar-accent-foreground: oklch(0.96 0.006 170);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.72 0.15 36);
+  --sidebar-ring: oklch(0.78 0.12 172);
 }
 
 @layer base {
