@@ -4,7 +4,7 @@ import hashlib
 from collections.abc import Iterable
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import pdfplumber
 from langchain_community.document_loaders import PDFPlumberLoader
@@ -14,7 +14,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from rag_pipeline.chunks import patient_prefix
 from rag_pipeline.vector_store import get_vector_store
 
-__all__ = ["Rejected", "aindex_pdfs", "doc_prefix", "load_pdf"]
+__all__ = ["LoadedPdf", "Rejected", "aindex_pdfs", "doc_prefix", "load_pdf"]
 
 # Text smaller than this, or white, is invisible to a reader but still in the
 # text layer: the usual place to hide an instruction to the model.
@@ -30,6 +30,13 @@ _SPLITTER = RecursiveCharacterTextSplitter(
 
 class Rejected(Exception):
     """The document is not indexed; the message says why."""
+
+
+class LoadedPdf(NamedTuple):
+    chunks: list[Document]
+    # The file's own text, without the identity line each chunk carries: what
+    # a reader of the document, the upload's model check among them, sees.
+    text: str
 
 
 def _has_hidden_text(path: Path) -> bool:
@@ -53,13 +60,16 @@ def doc_prefix(path: Path) -> str:
     return f"pdf:{hashlib.sha256(path.read_bytes()).hexdigest()[:12]}"
 
 
-def load_pdf(path: Path, record: dict[str, Any]) -> list[Document]:
-    """The chunks of `path`, which must belong to `record`'s patient.
+def load_pdf(path: Path, record: dict[str, Any]) -> LoadedPdf:
+    """The chunks and text of `path`, which must belong to `record`'s patient.
 
-    Belonging means the patient's date of birth is in the text. A name alone
-    is not enough -- a namesake's letter carries it too -- and a document with
-    no date of birth at all (a leaflet, an insurance renewal) is not part of a
-    medical record, so the same check keeps unrelated files out.
+    Belonging means the patient's date of birth and surname are both in the
+    text. A name alone is not enough -- a namesake's letter carries it too --
+    nor is the date of birth alone, which a stranger born the same day
+    shares. A document with no date of birth at all (a leaflet, an insurance
+    renewal) is not part of a medical record, so the same check keeps
+    unrelated files out. The surname only, since letters often shorten the
+    first name to an initial.
 
     Raises Rejected, so a refused file contributes no chunks at all.
     """
@@ -78,6 +88,8 @@ def load_pdf(path: Path, record: dict[str, Any]) -> list[Document]:
     # order, "7 June 1980") is read as not this patient: a miss, never a match.
     dob = record["dob"]
     if dob not in text and f"{date.fromisoformat(dob):%d/%m/%Y}" not in text:
+        raise Rejected("not this patient")
+    if record["name"].split()[-1].casefold() not in text.casefold():
         raise Rejected("not this patient")
 
     patient_id = record["id"]
@@ -102,7 +114,7 @@ def load_pdf(path: Path, record: dict[str, Any]) -> list[Document]:
                 },
             )
         )
-    return chunks
+    return LoadedPdf(chunks, text)
 
 
 async def aindex_pdfs(paths: Iterable[Path], record: dict[str, Any]) -> int:
@@ -114,7 +126,7 @@ async def aindex_pdfs(paths: Iterable[Path], record: dict[str, Any]) -> int:
     docs: dict[str, Document] = {}
     for path in paths:
         try:
-            docs.update((doc.id, doc) for doc in load_pdf(path, record))
+            docs.update((doc.id, doc) for doc in load_pdf(path, record).chunks)
         except Rejected as exc:
             print(f"Skipped {path.name}: {exc}")
     if docs:

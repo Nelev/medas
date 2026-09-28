@@ -20,7 +20,7 @@ RECORD = {
 
 
 def _chunks(name: str) -> list:
-    return load_pdf(DOCUMENTS / name, RECORD)
+    return load_pdf(DOCUMENTS / name, RECORD).chunks
 
 
 @pytest.mark.parametrize(
@@ -37,6 +37,24 @@ def _chunks(name: str) -> list:
 def test_rejects(name, reason):
     with pytest.raises(Rejected, match=reason):
         _chunks(name)
+
+
+def test_rejects_the_right_date_of_birth_under_another_surname():
+    # Born the same day is not the same patient.
+    with pytest.raises(Rejected, match="not this patient"):
+        load_pdf(
+            DOCUMENTS / "D04_prescription_gp_2026-08-18.pdf",
+            {**RECORD, "name": "Mattia Rossi"},
+        )
+
+
+def test_the_text_is_the_files_own_without_the_identity_line():
+    # What the upload's model check reads: an identity line naming the
+    # patient on every document would answer its question for it.
+    loaded = load_pdf(DOCUMENTS / "D02_letter_ent_clinic_2026-09-10.pdf", RECORD)
+
+    assert "Smacchia" in loaded.text
+    assert "Patient Mattia Smacchia (DOB" not in loaded.text
 
 
 def test_chunks_carry_identity_source_and_metadata():
