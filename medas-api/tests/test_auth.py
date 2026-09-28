@@ -18,7 +18,13 @@ from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
 import auth.session
-from auth.session import clerk_user_id, current_user, verified_email
+from auth.session import (
+    clerk_user_id,
+    current_user,
+    greeting_name,
+    session_claims,
+    verified_email,
+)
 from auth.settings import AuthSettings
 
 ORIGIN = "http://localhost:3000"
@@ -75,12 +81,32 @@ def bearer(token: str) -> HTTPAuthorizationCredentials:
 
 
 async def test_a_valid_session_token_names_its_user(settings, sign):
-    assert await clerk_user_id(bearer(sign()), settings) == CLERK_ID
+    claims = await session_claims(bearer(sign()), settings)
+
+    assert clerk_user_id(claims) == CLERK_ID
+
+
+@pytest.mark.parametrize(
+    ("claims", "name"),
+    [
+        pytest.param({"first_name": "Ada"}, "Ada", id="named"),
+        pytest.param({"first_name": "  Ada "}, "Ada", id="padded"),
+        # An instance whose session token was never customised.
+        pytest.param({}, None, id="no-claim"),
+        # The claim configured, but the account has no first name: Clerk
+        # renders the template as null or an empty string.
+        pytest.param({"first_name": None}, None, id="null"),
+        pytest.param({"first_name": " "}, None, id="blank"),
+        pytest.param({"first_name": 42}, None, id="not-a-string"),
+    ],
+)
+def test_the_greeting_addresses_the_first_name_claim(claims, name):
+    assert greeting_name(claims) == name
 
 
 async def test_no_token_is_401_with_a_bearer_challenge(settings):
     with pytest.raises(HTTPException) as caught:
-        await clerk_user_id(None, settings)
+        await session_claims(None, settings)
 
     assert caught.value.status_code == 401
     assert caught.value.headers == {"WWW-Authenticate": "Bearer"}
@@ -109,7 +135,7 @@ async def test_no_token_is_401_with_a_bearer_challenge(settings):
 )
 async def test_a_token_that_fails_verification_is_401(settings, sign, make_token):
     with pytest.raises(HTTPException) as caught:
-        await clerk_user_id(bearer(make_token(sign)), settings)
+        await session_claims(bearer(make_token(sign)), settings)
 
     assert caught.value.status_code == 401
 
@@ -118,7 +144,7 @@ async def test_a_token_that_fails_verification_is_401(settings, sign, make_token
 async def test_a_verified_token_without_a_session_or_user_is_401(settings, sign, claim):
     # Good signature, not a session token: nothing here to answer for.
     with pytest.raises(HTTPException) as caught:
-        await clerk_user_id(bearer(sign(**{claim: None})), settings)
+        await session_claims(bearer(sign(**{claim: None})), settings)
 
     assert caught.value.status_code == 401
 
@@ -134,7 +160,7 @@ async def test_machine_tokens_are_refused_without_asking_clerk(
     monkeypatch.setattr(auth.session, "verify_token_async", _must_not_run)
 
     with pytest.raises(HTTPException) as caught:
-        await clerk_user_id(bearer(f"{prefix}secret"), settings)
+        await session_claims(bearer(f"{prefix}secret"), settings)
 
     assert caught.value.status_code == 401
 

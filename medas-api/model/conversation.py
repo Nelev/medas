@@ -45,19 +45,19 @@ _CREATE = text(
 )
 
 
-def greeting_text(user: str) -> str:
-    """The assistant's opening line.
+def greeting_text(name: str | None) -> str:
+    """The assistant's opening line, "Hi there" without a name.
 
     Shared, so the copy the UI renders before a conversation exists and the
     copy stored as its first message cannot drift apart.
     """
-    return f"Hi {user}, how can I help you?"
+    return f"Hi {name or 'there'}, how can I help you?"
 
 
 async def create_conversation(
     session: AsyncSession,
     user_id: uuid.UUID,
-    user: str,
+    name: str | None,
     role: str,
     message_text: str,
 ) -> tuple[uuid.UUID, list[dict]]:
@@ -83,7 +83,7 @@ async def create_conversation(
         session,
         conversation_id,
         [
-            (MessageRole.ASSISTANT, greeting_text(user), None),
+            (MessageRole.ASSISTANT, greeting_text(name), None),
             (role, message_text, None),
         ],
         user_id=user_id,

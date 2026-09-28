@@ -6,7 +6,6 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { auth } from "@clerk/nextjs/server"
 
 import { init } from "@/api/init"
-import { greetingName } from "@/api/session"
 
 // An async Server Component: the request to medas-api happens on the server,
 // so there is no CORS preflight and no empty-list flash on first paint.
@@ -18,7 +17,7 @@ export default async function Home() {
   // fetched per request rather than baked in at build time.
   await auth.protect()
 
-  const { messages } = await init(await greetingName())
+  const { messages } = await init()
 
   return (
     // h-dvh rather than h-screen: dynamic viewport units account for mobile

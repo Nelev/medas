@@ -9,15 +9,9 @@ interface InitResponse {
   messages: ChatMessageProps[]
 }
 
-// `name` is who the greeting addresses; see greetingName in api/session.ts.
-const init = async (name?: string): Promise<InitResponse> => {
-  const url = new URL(`${API_BASE_URL}/`)
-
-  if (name) {
-    url.searchParams.set("user", name)
-  }
-
-  const response = await fetch(url.toString(), {
+// Who the greeting addresses is the API's to read from the session token.
+const init = async (): Promise<InitResponse> => {
+  const response = await fetch(`${API_BASE_URL}/`, {
     headers: await authorization(),
   })
 
