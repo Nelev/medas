@@ -10,12 +10,12 @@ import uuid
 
 from fastapi import UploadFile
 
-from agent.documents import Attachment
-from agent.patient import record_id
 from controller.conversation import NotFound
 from langchain_agent.agent import answer
-from langchain_agent.rag import find_record
+from langchain_agent.documents import Attachment
+from langchain_agent.patient import record_id
 from rag_pipeline.pdf import Rejected
+from rag_pipeline.record import find_record
 from utils import messages_as_turns, parse_agent_reply
 
 __all__ = ["DocumentNotStored", "RecordNotFound", "index_upload"]

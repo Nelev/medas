@@ -4,9 +4,6 @@ Run it from medas-api:
 
     uv run python -m langchain_agent.agent
 
-As a module, not a file: run as a file, this module's own name shadows the
-`agent` package it imports search_record from.
-
 The caller passes the whole conversation -- the stored turns and the new
 question -- and gets back the model's reply as text: a JSON object, as the
 prompt asks for, which the caller reads with utils.parse_agent_reply. No
@@ -29,10 +26,10 @@ from langchain.tools import ToolRuntime, tool
 from langchain_openai import ChatOpenAI
 from langgraph.types import Command
 
-from agent.assistant_general_prompt import ASSISTANT_SYSTEM_PROMPT
-from agent.documents import Attachment, add_document
-from agent.search import search_record
+from langchain_agent.assistant_general_prompt import ASSISTANT_SYSTEM_PROMPT
+from langchain_agent.documents import Attachment, add_document
 from rag_pipeline.pdf import Rejected
+from rag_pipeline.search import search_record
 from utils import OPENROUTER_BASE_URL
 
 load_dotenv()

@@ -10,8 +10,8 @@ from pathlib import Path
 
 from starlette.concurrency import run_in_threadpool
 
-from langchain_agent.rag import find_record
 from rag_pipeline.pdf import LoadedPdf, Rejected, load_pdf
+from rag_pipeline.record import find_record
 from rag_pipeline.vector_store import get_vector_store
 from rag_pipeline.verify import averify
 

@@ -11,13 +11,13 @@ from types import SimpleNamespace
 import pytest
 
 import langchain_agent.agent as agent
-from agent.documents import Attachment
 from langchain_agent.agent import (
     RecordContext,
     add_patient_document,
     answer,
     search_patient_record,
 )
+from langchain_agent.documents import Attachment
 from rag_pipeline.pdf import Rejected
 
 RECORD_ID = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
@@ -97,7 +97,7 @@ def _result(command) -> dict:
 
 @pytest.fixture
 def added(monkeypatch) -> list:
-    """Stand in for agent.documents.add_document; returns the calls to it."""
+    """Stand in for langchain_agent.documents.add_document; returns the calls to it."""
     calls = []
 
     async def _add(attachment, record_id):
