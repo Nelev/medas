@@ -408,6 +408,32 @@ describe("ChatComposer", () => {
       ).toBeEnabled()
     })
 
+    it("holds the send until the upload lands", async () => {
+      const settle = hold(mockedUploadPdf)
+      render(<ChatComposer />)
+
+      await userEvent.upload(screen.getByLabelText("PDF file"), pdf)
+
+      // Before the first message, a send now would start a second
+      // conversation alongside the one the upload is starting.
+      expect(
+        await screen.findByRole("button", { name: "Send message" }),
+      ).toBeDisabled()
+      await userEvent.type(
+        screen.getByRole("textbox", { name: "Message" }),
+        "Do I have any allergies?{Enter}",
+      )
+      expect(mockedAsk).not.toHaveBeenCalled()
+
+      settle.resolve(uploaded)
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Send message" }),
+        ).toBeEnabled(),
+      )
+    })
+
     it("leaves the upload button usable after a failure", async () => {
       mockedUploadPdf.mockRejectedValue(new Error("Failed to fetch"))
       render(<ChatComposer />)

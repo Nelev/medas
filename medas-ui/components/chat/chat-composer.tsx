@@ -39,8 +39,10 @@ export function ChatComposer() {
     const text = String(new FormData(form).get("message") ?? "").trim()
 
     // One message in flight at a time: there is a single pending slot, and a
-    // second send would also race the first for the conversation id.
-    if (!text || pending) return
+    // second send would also race the first for the conversation id. An
+    // upload writes turns too, so a send waits for it: before the first
+    // message, the two would each start their own conversation.
+    if (!text || pending || isUploadingDocument) return
 
     const message = { role: "user" as const, text }
 
@@ -176,7 +178,7 @@ export function ChatComposer() {
                 type="submit"
                 size="icon"
                 aria-label="Send message"
-                disabled={pending !== null}
+                disabled={pending !== null || isUploadingDocument}
                 className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-primary/30 size-9 shrink-0 rounded-full shadow-md"
               >
                 <SendHorizontal className="size-4" aria-hidden />
