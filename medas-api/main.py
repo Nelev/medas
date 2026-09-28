@@ -5,13 +5,13 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent.patient import record_id
-from auth import CurrentUser, get_auth_settings
+from auth import CurrentUser, GreetingName, get_auth_settings
 from database.database import dispose_engine, get_session, init_engine
 from langchain_agent.agent import answer as ask_agent
 from model import (
@@ -47,24 +47,17 @@ app = FastAPI(lifespan=lifespan)
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
-# The name a greeting addresses, as both routes that greet take it: the same
-# rules on each, so a name the preview accepts is one the stored copy does.
-# Only the words -- who is asking is the session token. Without a name the
-# greeting is "Hi there", decided here and nowhere else.
-GreetingName = Annotated[str, Query(min_length=1, max_length=200)]
-DEFAULT_GREETING_NAME = "there"
-
 # No CORS middleware: the browser never calls this API directly. The UI's
 # requests go through its own server, so every caller here is server-side
 # and same-origin rules do not apply.
 
 
 @app.get("/")
-def init_user_profile(_: CurrentUser, user: GreetingName = DEFAULT_GREETING_NAME):
+def init_user_profile(_: CurrentUser, name: GreetingName):
     # Not persisted: this is the preview shown before the user says anything.
     # The stored copy is seeded by POST /ask from the same text. Signed in or
     # nothing, like every other route here.
-    return {"messages": [{"role": "assistant", "text": greeting_text(user)}]}
+    return {"messages": [{"role": "assistant", "text": greeting_text(name)}]}
 
 
 def _as_turns(messages: list[dict], question: str) -> list[dict]:
@@ -130,8 +123,8 @@ async def ask(
     message: NewMessage,
     user_id: CurrentUser,
     session: SessionDep,
+    name: GreetingName,
     conversationId: uuid.UUID | None = None,
-    user: GreetingName = DEFAULT_GREETING_NAME,
 ):
     """Ask the agent. Starts a conversation when there is not one yet.
 
@@ -151,14 +144,15 @@ async def ask(
     a conversationId that is not theirs is answered exactly like one that
     does not exist: 404, so an id cannot be probed for.
 
-    `user` is read only when a conversation is started, for its greeting.
+    The name the greeting addresses comes from the session token too, read
+    only when a conversation is started.
     """
     if conversationId is None:
         try:
             conversation_id, written = await create_conversation(
                 session,
                 user_id,
-                user,
+                name,
                 message.role,
                 message.text,
             )

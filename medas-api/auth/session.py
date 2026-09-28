@@ -1,12 +1,14 @@
 """The current user, from the Clerk session token on the request.
 
-Two steps, as two dependencies, so each can be tested and overridden alone:
-verify the token and read who it names (clerk_user_id), then find the users
-row that person is (current_user).
+Verify the token once (session_claims), then read from it who it names
+(clerk_user_id) and the name the greeting addresses (greeting_name), and find
+the users row that person is (current_user). Each is its own dependency, so
+each can be tested and overridden alone; FastAPI runs session_claims once per
+request however many depend on it.
 """
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Any
 
 from clerk_backend_api import Clerk
 from clerk_backend_api.security import (
@@ -25,7 +27,15 @@ from auth.settings import AuthSettings, get_auth_settings
 from database.database import get_session
 from model import create_clerk_user, link_clerk_user, user_by_clerk_id
 
-__all__ = ["CurrentUser", "clerk_user_id", "current_user", "verified_email"]
+__all__ = [
+    "CurrentUser",
+    "GreetingName",
+    "clerk_user_id",
+    "current_user",
+    "greeting_name",
+    "session_claims",
+    "verified_email",
+]
 
 # auto_error=False so a missing header is our 401, with the same shape as a
 # bad token, rather than FastAPI's own response.
@@ -48,11 +58,11 @@ def _unauthorized(detail: str) -> HTTPException:
     )
 
 
-async def clerk_user_id(
+async def session_claims(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
     settings: Annotated[AuthSettings, Depends(get_auth_settings)],
-) -> str:
-    """Clerk's id for the person whose session token this is."""
+) -> dict[str, Any]:
+    """The claims of the request's session token, once it has verified."""
     if credentials is None:
         raise _unauthorized("Not signed in")
 
@@ -88,7 +98,32 @@ async def clerk_user_id(
     if not payload.get("sid") or not isinstance(subject, str) or not subject:
         raise _unauthorized("Not a session token")
 
-    return subject
+    return payload
+
+
+def clerk_user_id(
+    claims: Annotated[dict[str, Any], Depends(session_claims)],
+) -> str:
+    """Clerk's id for the person whose session token this is."""
+    return claims["sub"]
+
+
+def greeting_name(
+    claims: Annotated[dict[str, Any], Depends(session_claims)],
+) -> str | None:
+    """The name the greeting addresses: the account's first name.
+
+    Read from the `first_name` claim, which the Clerk dashboard adds to the
+    session token (Sessions -> Customize session token). Signed by Clerk like
+    the rest of the token, and read locally -- no call to Clerk. Not who is
+    asking: that is clerk_user_id. None for an account without a first name,
+    or an instance without the claim configured; greeting_text decides what
+    the greeting says then.
+    """
+    name = claims.get("first_name")
+    if not isinstance(name, str):
+        return None
+    return name.strip() or None
 
 
 async def verified_email(clerk_id: str, settings: AuthSettings) -> str | None:
@@ -161,3 +196,4 @@ async def current_user(
 
 
 CurrentUser = Annotated[uuid.UUID, Depends(current_user)]
+GreetingName = Annotated[str | None, Depends(greeting_name)]

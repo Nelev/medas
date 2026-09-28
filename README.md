@@ -15,7 +15,7 @@ Every request to medas-api is made by the Next server. The browser only ever tal
 
 | Step          | Who calls                              | Call                                                            |
 | ------------- | -------------------------------------- | --------------------------------------------------------------- |
-| Page load     | The Next server, in a Server Component | `GET /[?user=…]` → the greeting, not persisted                  |
+| Page load     | The Next server, in a Server Component | `GET /` → the greeting, not persisted                           |
 | Every message | The Next server, in a Server Action    | `POST /ask[?conversationId=…]` → stores the turn and answers it |
 
 That is what keeps the API's origin out of the browser bundle, removes any need for CORS, and lets one build run in any environment.
@@ -26,7 +26,7 @@ Every call to medas-api carries the user's Clerk session token as `Authorization
 
 One endpoint answers every message. `conversationId` is optional: without it the API starts a conversation and seeds the greeting, with it the message is appended to that thread. A caller that has just opened the app does not have to know which case it is in, so the composer has no branch — it passes whatever id it holds, which is empty on the first send. The id comes back in the response and lives in a client-side store.
 
-The greeting addresses the signed-in user by their Clerk first name. [`greetingName()`](medas-ui/api/session.ts) reads it on the Next server, and the same name goes to `GET /` for the preview and to the `POST /ask` that starts a conversation, so the greeting stored is the one the patient already saw. An account with no first name sends none, and the API greets "Hi there".
+The greeting addresses the signed-in user by their Clerk first name, which rides in the session token as a `first_name` claim. [`greeting_name`](medas-api/auth/session.py) reads it from the verified token, so `GET /` for the preview and the `POST /ask` that starts a conversation greet with the same name, and the greeting stored is the one the patient already saw. Nothing asks Clerk for it. The claim has to be added once in the Clerk dashboard, under **Sessions → Customize session token**: `{"first_name": "{{user.first_name}}"}`. Without it, or for an account with no first name, the API greets "Hi there". A renamed account keeps the old name until its token refreshes, about a minute.
 
 Nothing is read back: the UI keeps the history it was given, so a reload starts from the greeting again.
 
@@ -148,16 +148,16 @@ Both suites are unit-only by design — no database, no API, no model, no browse
 
 ## API surface
 
-| Method | Path                                         | Request        | Response                                                         |
-| ------ | -------------------------------------------- | -------------- | ---------------------------------------------------------------- |
-| `GET`  | `/[?user=<name>]`                            | —              | `{messages: [{role, text}]}` — the greeting, not persisted       |
-| `POST` | `/ask[?conversationId=<uuid>][&user=<name>]` | `{role, text}` | `201 {conversation_id, messages}` — the turns this request added |
-| `GET`  | `/conversations/{id}`                        | —              | `{conversation_id, messages}` — the whole history, oldest first  |
-| `GET`  | `/health/db`                                 | —              | `{status, server_version}`                                       |
+| Method | Path                           | Request        | Response                                                         |
+| ------ | ------------------------------ | -------------- | ---------------------------------------------------------------- |
+| `GET`  | `/`                            | —              | `{messages: [{role, text}]}` — the greeting, not persisted       |
+| `POST` | `/ask[?conversationId=<uuid>]` | `{role, text}` | `201 {conversation_id, messages}` — the turns this request added |
+| `GET`  | `/conversations/{id}`          | —              | `{conversation_id, messages}` — the whole history, oldest first  |
+| `GET`  | `/health/db`                   | —              | `{status, server_version}`                                       |
 
 `POST /ask` returns **what it added**, not the whole thread: three turns when it started the conversation (the greeting, the question, the answer) and two when it appended (the question and the answer). Either way the client appends them to what it already has.
 
-Three things that trip people up: who is asking is the session token alone, never a request field; `user` is only the name the greeting addresses, an optional **query parameter** (1–200 characters, `"Hi there"` without one) that `POST /ask` reads only when it starts a conversation; and the message goes in the body **flat** — a `{message: {...}}` wrapper is a 422.
+Two things that trip people up: who is asking, and the name the greeting addresses, come from the session token alone, never a request field (a `user` query parameter is ignored); and the message goes in the body **flat** — a `{message: {...}}` wrapper is a 422.
 
 `message_id` and `timestamp` are minted server-side and ignored if sent. An assistant turn also carries `severity` (`S1`–`S5`) and `confidence` when the model returned them, stored with the message rather than returned alone: which triage code was given, and when, is what an audit asks about later. An unknown or soft-deleted conversation is a `404`, never an implicit create — that would resurrect deleted threads and let a caller choose its own primary key.
 
@@ -278,7 +278,6 @@ Safety and correctness first, because these are the ones that matter if this eve
 Then the smaller ones:
 
 - **No history on reload.** `GET /conversations/{id}` exists, but nothing calls it: the UI keeps the history it was given in memory, so a refresh returns to the greeting with the stored conversation orphaned.
-- **Every page load waits on Clerk.** `greetingName()` calls `currentUser()`, a Clerk Backend API request, before the greeting is fetched — tens to hundreds of milliseconds on each render, for one string. A `firstName` claim on the session token would make it a local read, and would let the API resolve the name itself and drop the `user` parameter; it needs the claim added in the Clerk dashboard first.
 - **No idempotency.** A double-submitted first message creates two conversations.
 - **A submit before hydration is lost.** The composer uses an `onSubmit` handler rather than a form action, so a submission made before React hydrates navigates to `/?message=…` and the message is dropped. React queues submissions for a `<form action={…}>`; a plain handler cannot.
 - **pgvector is not installed.** Embeddings live in Chroma; moving them into Postgres needs a source build on Windows.

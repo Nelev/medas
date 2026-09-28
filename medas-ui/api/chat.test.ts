@@ -1,9 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { currentUser } from "@clerk/nextjs/server"
-
 import { ask } from "@/api/chat"
-import { named, requestFrom, signInAs, stubFetch, TOKEN } from "@/test/api"
+import { requestFrom, signInAs, stubFetch, TOKEN } from "@/test/api"
 import {
   askedTurns,
   CONVERSATION_ID,
@@ -14,11 +12,10 @@ import {
 } from "@/test/fixtures"
 
 // The session is Clerk's to read, so it is mocked; each test starts signed in.
-vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn(), currentUser: vi.fn() }))
+vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn() }))
 
 beforeEach(() => {
   signInAs()
-  named("Ada")
 })
 
 describe("ask", () => {
@@ -51,34 +48,6 @@ describe("ask", () => {
     expect(searchParams.has("conversationId")).toBe(false)
     // Who is asking is the token's to say, never the URL's.
     expect(searchParams.has("userId")).toBe(false)
-  })
-
-  // With no first name there is no name to send, and the API decides what
-  // the greeting says -- the same as it does for the preview.
-  it.each([
-    ["Ada", "Ada"],
-    [null, null],
-  ])(
-    "names who the greeting addresses when it starts one (%s)",
-    async (firstName, sent) => {
-      named(firstName)
-      const fetchMock = stubFetch(jsonResponse(createdConversation, 201))
-
-      await ask({ role: "user", text: "Do I have any allergies?" })
-
-      expect(requestFrom(fetchMock).searchParams.get("user")).toBe(sent)
-    },
-  )
-
-  it("sends no name on a later turn, nor asks Clerk for one", async () => {
-    const fetchMock = stubFetch(jsonResponse(askedTurns, 201))
-
-    await ask({ role: "user", text: "And my medications?" }, CONVERSATION_ID)
-
-    const { searchParams } = new URL(requestFrom(fetchMock).url)
-
-    expect(searchParams.has("user")).toBe(false)
-    expect(currentUser).not.toHaveBeenCalled()
   })
 
   it("returns the whole opening when it started the conversation", async () => {
