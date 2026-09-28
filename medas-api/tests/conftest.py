@@ -7,7 +7,7 @@ between tests.
 import pytest
 
 from auth import get_auth_settings
-from database.settings import get_settings
+from database.settings import DbSettings, get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -23,6 +23,20 @@ def _reset_settings_cache():
     yield
     get_settings.cache_clear()
     get_auth_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_database_env(monkeypatch):
+    """Remove every DbSettings variable from the process environment.
+
+    load_dotenv() runs at import in several modules and copies .env into
+    os.environ, where it wins over a test's _env_file=None. Without this a
+    developer's local values (DATABASE_PORT=5433 for the Docker database)
+    decide what the defaults tests see, and which modules happened to be
+    imported first decides whether they do.
+    """
+    for name in DbSettings.model_fields:
+        monkeypatch.delenv(name.upper(), raising=False)
 
 
 @pytest.fixture(autouse=True)

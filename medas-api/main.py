@@ -13,6 +13,7 @@ from auth import CurrentUser, GreetingName, get_auth_settings
 from controller import NotFound, ask_question, get_conversation
 from database.database import dispose_engine, get_session, init_engine
 from model import greeting_text
+from rag_pipeline.vector_store import init_vector_store
 from schema import NewMessage
 
 # Copies .env into os.environ for what reads it directly rather than through
@@ -29,6 +30,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     engine = init_engine()
     async with engine.connect() as conn:
         await conn.execute(text("SELECT 1"))
+    # Likewise a missing record_chunks table (migrations not run) fails here.
+    await init_vector_store(engine)
 
     yield
 

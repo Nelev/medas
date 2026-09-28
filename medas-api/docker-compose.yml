@@ -1,0 +1,31 @@
+# Local Postgres with pgvector. pgvector has no official Windows build, so the
+# database runs from the upstream image instead of a native install. It listens
+# on 5433 so a native Postgres can keep 5432; point DATABASE_PORT at it.
+#
+# Credentials are read from .env next to this file, the same values the app
+# composes its DSN from, so there is one source of truth.
+services:
+  db:
+    # Pinned: the extension version is part of the schema's behaviour, so an
+    # upgrade should be a deliberate change here, not a pull.
+    image: pgvector/pgvector:0.8.6-pg18
+    container_name: medas-db
+    environment:
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME}
+    ports:
+      - "5433:5432"
+    volumes:
+      # Postgres 18 images keep data in a versioned subdirectory of this path,
+      # so the volume is mounted at the parent. Named, so it survives
+      # `docker compose down`; only `down -v` deletes it.
+      - medas-pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER} -d ${DATABASE_NAME}"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  medas-pgdata:

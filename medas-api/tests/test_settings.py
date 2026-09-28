@@ -24,13 +24,11 @@ def test_password_is_the_only_required_field():
     assert settings.database_name == "medas"
 
 
-def test_missing_password_is_a_validation_error(monkeypatch):
-    # _env_file=None ignores the file, but not the process environment: main
-    # calls load_dotenv() at import, which copies .env into os.environ for
-    # everything that runs afterwards. Without this the password is present
-    # and the test silently stops testing anything.
-    monkeypatch.delenv("DATABASE_PASSWORD", raising=False)
-
+def test_missing_password_is_a_validation_error():
+    # _env_file=None ignores the file, but not the process environment, where
+    # load_dotenv() may have put the password; conftest's _no_database_env
+    # removes it, or this test would silently stop testing anything.
+    #
     # No default, so an absent password fails at construction rather than
     # producing a DSN that cannot authenticate.
     with pytest.raises(ValidationError):

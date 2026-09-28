@@ -34,25 +34,22 @@ Nothing is read back: the UI keeps the history it was given, so a reload starts 
 
 - [uv](https://docs.astral.sh/uv/) — installs Python 3.14 itself, so no system Python is needed
 - Node 20+ and Yarn 4 (pinned by `packageManager`; `corepack enable` honours it)
-- Postgres 13 or newer — `gen_random_uuid()` is the only version-sensitive dependency
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) — runs Postgres 18 with the pgvector extension, which has no official Windows build
 - An [OpenRouter](https://openrouter.ai) key. Answering a message means an embedding call per search and several model calls.
 
 ## Setup
 
-### Database
-
-```bash
-createdb medas
-```
-
-### API
+### API and database
 
 ```bash
 cd medas-api
-cp .env.example .env    # set DATABASE_PASSWORD
+cp .env.example .env    # set DATABASE_PASSWORD, and DATABASE_PORT=5433
+docker compose up -d
 uv sync --group dev
 uv run alembic upgrade head
 ```
+
+[`medas-api/docker-compose.yml`](medas-api/docker-compose.yml) runs `pgvector/pgvector:0.8.6-pg18` on port **5433**, so a native Postgres can keep 5432. It takes its user, password and database name from the same `.env`, and keeps its data in the named volume `medas-pgdata`, which survives `docker compose down` — only `down -v` deletes it. Docker Desktop has to be running whenever the API is. The migrations create the `vector` extension themselves; the container's user is a superuser, so nothing else is needed.
 
 The DSN is composed from the individual `DATABASE_*` variables via SQLAlchemy's `URL.create()`, which escapes the password — don't percent-encode it in `.env`.
 
@@ -99,7 +96,7 @@ That `INSERT` works just as well through `psql` — note the Windows installer d
 
 ### Build the vector index
 
-The agent searches this to answer anything about the patient, so it has to exist first — an empty or absent Chroma store means no passages and an answer with nothing to cite. See [RAG pipeline](#rag-pipeline); it is one command, and it costs one batch of embedding calls.
+The agent searches this to answer anything about the patient, so it has to exist first — an empty `record_chunks` table means no passages and an answer with nothing to cite. See [RAG pipeline](#rag-pipeline); it is one command, and it costs one embedding call per chunk.
 
 ### UI
 
@@ -167,7 +164,7 @@ The route does not run a tool loop of its own. It assembles the conversation, ha
 
 1. **Assembles the turns.** Every stored message becomes `{role, content}` — the wire calls the field `text`, a chat model calls it `content` — and the new question goes last. The whole thread is sent, so the model answers in the context of everything said before rather than the last message alone.
 2. **Runs the agent.** [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py) is a `create_agent` graph with one tool and [`agent/assistant_general_prompt.py`](medas-api/agent/assistant_general_prompt.py) as its system prompt. The graph decides for itself whether to search, how many times, and when it has enough to answer — which is the thing the hand-rolled loop this replaced could not do.
-3. **Searches when it asks to.** The model cannot reach Chroma; only this process can, so a tool call is a question rather than an answer. `search_patient_record(query)` takes **only** a query: whose record is searched is fixed by the service, not chosen by the model, so a message claiming a different record id cannot become a read of somebody else's chart.
+3. **Searches when it asks to.** The model cannot reach the vector store; only this process can, so a tool call is a question rather than an answer. `search_patient_record(query)` takes **only** a query: whose record is searched is fixed by the service, not chosen by the model, so a message claiming a different record id cannot become a read of somebody else's chart.
 4. **Reads the reply.** The prompt specifies one JSON object, so the route parses it for `message` — what the patient sees — and stores `severity` and `confidence` as metadata.
 
 The prompt triages rather than diagnoses: a ranked differential, an explicit confidence, clarifying questions whenever that confidence is not high, and a severity rated on the **worst plausible cause** rather than the most likely one. Red flags lead the reply and force `S1`.
@@ -186,6 +183,8 @@ Even so the model sometimes answers in prose — most often on a red flag, where
 
 `messages` — id, FK to `conversations`, `seq`, `role`, `content`, `metadata`, `created_at`.
 
+`record_chunks` — the retrieval index: `langchain_id` (the chunk id, as text), `content`, `embedding vector(1536)`, `patient_id` (indexed), `kind`, `langchain_metadata`. Written and read by langchain-postgres' `PGVectorStore`, so the columns carry its default names, but owned by Alembic like every other table.
+
 Messages started out as a `jsonb` array on the conversation row. That shape returned the whole history in one read, which is exactly what the model is given, but Postgres has no in-place update: every append rewrote the entire row, so adding message N cost O(N) and every writer on that conversation queued behind the rewrite. One row per message makes an append constant-time and lets the history be read in pieces — ordered, counted, paginated, or filtered by role.
 
 Ordering is `seq`, a **global** identity column, not a timestamp and not a per-conversation counter. `created_at` defaults to `clock_timestamp()` so it is distinct per row, but a counter still beats it: a counter cannot run backwards when the clock is stepped, and it is a stable pagination cursor — "everything after `seq` N" stays correct where "everything after instant T" can skip a row written a microsecond earlier by a slower transaction. A per-conversation `MAX(seq) + 1` would need a lock on the conversation row — putting back the serialisation this table removes — or a retry loop on the unique violation. A global counter leaves gaps between conversations, and the gaps mean nothing.
@@ -198,18 +197,22 @@ Moving the data is [`c3a5e1d97b24`](medas-api/migrations/versions/c3a5e1d97b24_a
 
 ## RAG pipeline
 
-[`medas-api/rag_pipeline`](medas-api/rag_pipeline) flattens a patient record into standalone chunks, embeds them with `openai/text-embedding-3-small` via OpenRouter, and stores them in a local Chroma collection.
+[`medas-api/rag_pipeline/chunks.py`](medas-api/rag_pipeline/chunks.py) flattens a patient record into standalone chunks, one per clinical record. [`langchain_agent/rag.py`](medas-api/langchain_agent/rag.py) embeds them with `openai/text-embedding-3-small` via OpenRouter and stores them in the `record_chunks` table:
 
 ```bash
 cd medas-api
-OPENROUTER_API_KEY=... uv run python -m rag_pipeline.run
+uv run python -m langchain_agent.rag
 ```
 
 Each chunk repeats the patient identity line, because retrieval hands the model one chunk with no surrounding document — "Reaction: rash" on its own names neither the patient nor the substance.
 
-The embedding calls are billable, so they are behind `run()` rather than at module level: importing the module fires nothing.
+Re-running is safe: each row is keyed on its chunk id, so a second run replaces the rows rather than adding to them. The embedding calls are billable, so they are behind `run()` rather than at module level: importing the module fires nothing.
 
-The query side is [`agent/search.py`](medas-api/agent/search.py) — one function, `search_record(query, patient_id)`, which the agent's tool wraps. The `patient_id` is the signed-in user's, `pat_{users.id}`: `/ask` passes it to `answer()`, which hands it to the run as LangChain runtime context, so the tool reads it without it ever being a tool argument the model could set. An account with no indexed record gets no passages, and is told its record shows nothing relevant. It embeds the query with the same model the corpus was embedded with (Chroma's own MiniLM would be a different space, and the distances meaningless), filters on `patient_id` in the metadata, and returns each passage with its `chunk_id` and distance. Both halves stay off the event loop: the embedding is a real `await`, and the Chroma query — whose client is synchronous and embedded — runs in a thread.
+The store itself is one shared definition, [`rag_pipeline/vector_store.py`](medas-api/rag_pipeline/vector_store.py): the embedding model, and a `PGVectorStore` over `record_chunks` built on the app's own asyncpg engine. Ingest and search both go through it, so they cannot drift onto different models or tables.
+
+The query side is [`agent/search.py`](medas-api/agent/search.py) — one function, `search_record(query, patient_id)`, which the agent's tool wraps. The `patient_id` is the signed-in user's, `pat_{users.id}`: `/ask` passes it to `answer()`, which hands it to the run as LangChain runtime context, so the tool reads it without it ever being a tool argument the model could set. An account with no indexed record gets no passages, and is told its record shows nothing relevant. It embeds the query with the corpus's model, filters on `patient_id` in the SQL (an indexed column, not a key in the JSON), and returns each passage with its `chunk_id` and cosine distance — lower is nearer. Both halves are awaited, so neither blocks the event loop. The store is opened once, in the lifespan, on the app's own engine — one connection pool, sized and pre-pinged by `DbSettings` and disposed at shutdown — so a missing `record_chunks` table fails at boot rather than on the first question.
+
+The older Chroma pipeline (`uv run python -m rag_pipeline.run`, into `rag_pipeline/chroma/`) still builds, but nothing reads it any more.
 
 ## Testing
 
@@ -249,7 +252,7 @@ The build needs no API. `/` renders per request, so nothing is fetched while bui
 
 **A submit reloads the page with `?message=…` in the URL.** The form was submitted before React hydrated, so the browser did a plain GET. Harmless, and it resolves once the page finishes loading.
 
-**An answer arrives with no citations, saying the record does not cover it.** The Chroma index is missing or empty — build it with the RAG pipeline. The API does not fail without it; it answers from general knowledge and says so, which is harder to notice.
+**An answer arrives with no citations, saying the record does not cover it.** The `record_chunks` table is empty — build it with the RAG pipeline. The API does not fail without it; it answers from general knowledge and says so, which is harder to notice.
 
 **A reply arrives with no severity badge.** The model answered in prose instead of the JSON the prompt asks for. The text is a real answer and is shown as-is; only the code is missing.
 
@@ -263,7 +266,7 @@ The build needs no API. `/` renders per request, so nothing is fetched while bui
 
 ## Status
 
-Working end to end: the chat UI, one endpoint that starts a conversation or continues it, multi-turn answers grounded in the patient's record with the triage code rendered as a badge, Postgres persistence, and the chunking and embedding pipeline with its Chroma index.
+Working end to end: the chat UI, one endpoint that starts a conversation or continues it, multi-turn answers grounded in the patient's record with the triage code rendered as a badge, Postgres persistence, and the chunking and embedding pipeline with its pgvector index.
 
 ### Known gaps
 
@@ -280,4 +283,4 @@ Then the smaller ones:
 - **No history on reload.** `GET /conversations/{id}` exists, but nothing calls it: the UI keeps the history it was given in memory, so a refresh returns to the greeting with the stored conversation orphaned.
 - **No idempotency.** A double-submitted first message creates two conversations.
 - **A submit before hydration is lost.** The composer uses an `onSubmit` handler rather than a form action, so a submission made before React hydrates navigates to `/?message=…` and the message is dropped. React queues submissions for a `<form action={…}>`; a plain handler cannot.
-- **pgvector is not installed.** Embeddings live in Chroma; moving them into Postgres needs a source build on Windows.
+- **Chroma is still in the tree.** `chromadb`, `rag_pipeline/run.py` and `rag_pipeline/embeddings.py`'s batch helpers served the old index and can go.

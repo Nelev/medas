@@ -9,6 +9,7 @@ table. Importing them here means ``import model`` is enough.
 from database.database import Base
 from model.conversation import Conversation, create_conversation, greeting_text
 from model.message import Message, MessageRole, append_message, list_messages
+from model.record_chunk import RecordChunk
 from model.user import (
     User,
     UserRole,
@@ -22,6 +23,7 @@ __all__ = [
     "Conversation",
     "Message",
     "MessageRole",
+    "RecordChunk",
     "User",
     "UserRole",
     "append_message",
