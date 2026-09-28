@@ -13,7 +13,6 @@ from auth import CurrentUser, GreetingName, get_auth_settings
 from controller import NotFound, ask_question, get_conversation, index_upload
 from database.database import dispose_engine, get_session, init_engine
 from model import greeting_text
-from rag_pipeline.pdf import Rejected
 from rag_pipeline.vector_store import init_vector_store
 from schema import NewMessage
 
@@ -49,13 +48,6 @@ async def not_found(_: Request, exc: NotFound) -> JSONResponse:
     # One mapping for every route: a conversation that is someone else's is
     # only indistinguishable from a missing one if every route answers alike.
     return JSONResponse(status_code=404, content={"detail": exc.detail})
-
-
-@app.exception_handler(Rejected)
-async def rejected(_: Request, exc: Rejected) -> JSONResponse:
-    # A document that does not belong in the record, from any route that
-    # indexes one; the reason is the message.
-    return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 
 # No CORS middleware: the browser never calls this API directly. The UI's
@@ -101,16 +93,23 @@ async def read_conversation(
     return {"conversation_id": conversation_id, "messages": messages}
 
 
-@app.post("/documents")
-async def upload_document(file: UploadFile, user_id: CurrentUser):
+@app.post("/documents", status_code=201)
+async def upload_document(
+    file: UploadFile,
+    user_id: CurrentUser,
+    session: SessionDep,
+    name: GreetingName,
+    conversationId: uuid.UUID | None = None,
+):
     """Have the agent add a PDF to the signed-in user's record, for it to
-    search.
-
-    A file it does not store (not medical, not this patient's, hidden text,
-    unreadable) is a 422 with the agent's message, and nothing is stored.
+    search. Answers like /ask: the conversation, started when there is not
+    one yet, and the turns this upload added -- the request and the agent's
+    answer, whether it stored the file or refused it.
     """
-    reply = await index_upload(user_id, file)
-    return {"status": "ok", **reply}
+    conversation_id, messages = await index_upload(
+        session, user_id, name, file, conversationId
+    )
+    return {"conversation_id": conversation_id, "messages": messages}
 
 
 @app.get("/health/db")

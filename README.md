@@ -145,13 +145,13 @@ Both suites are unit-only by design — no database, no API, no model, no browse
 
 ## API surface
 
-| Method | Path                           | Request          | Response                                                                                                                                                                  |
-| ------ | ------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`  | `/`                            | —                | `{messages: [{role, text}]}` — the greeting, not persisted                                                                                                                |
-| `POST` | `/ask[?conversationId=<uuid>]` | `{role, text}`   | `201 {conversation_id, messages}` — the turns this request added                                                                                                          |
-| `GET`  | `/conversations/{id}`          | —                | `{conversation_id, messages}` — the whole history, oldest first                                                                                                           |
-| `POST` | `/documents`                   | multipart `file` | `{status: "ok", chunks, message}` — the agent verifies and stores the PDF in the user's record; `422` with the agent's message if it was not stored, `404` with no record |
-| `GET`  | `/health/db`                   | —                | `{status, server_version}`                                                                                                                                                |
+| Method | Path                           | Request          | Response                                                                                                                                                                                                                               |
+| ------ | ------------------------------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/`                            | —                | `{messages: [{role, text}]}` — the greeting, not persisted                                                                                                                                                                             |
+| `POST` | `/ask[?conversationId=<uuid>]` | `{role, text}`   | `201 {conversation_id, messages}` — the turns this request added                                                                                                                                                                       |
+| `GET`  | `/conversations/{id}`          | —                | `{conversation_id, messages}` — the whole history, oldest first                                                                                                                                                                        |
+| `POST` | `/documents[?conversationId=]` | multipart `file` | `201 {conversation_id, messages}`, like `/ask`: a user turn `upload file requested`, then the agent's answer (stored or refused), after the greeting when it started the conversation; `404` with no record or an unknown conversation |
+| `GET`  | `/health/db`                   | —                | `{status, server_version}`                                                                                                                                                                                                             |
 
 `POST /ask` returns **what it added**, not the whole thread: three turns when it started the conversation (the greeting, the question, the answer) and two when it appended (the question and the answer). Either way the client appends them to what it already has.
 
@@ -257,7 +257,7 @@ The chunk ids are what the agent cites, and what the evaluation matches against 
 
 An upload through `POST /documents` gets one more check after these, before anything is embedded: [`rag_pipeline/verify.py`](medas-api/rag_pipeline/verify.py) (`averify`) asks `openai/gpt-4o-mini` whether the document is medical and about this patient, given the identity line and the first 4,000 characters of the file's own text. Anything but a clear yes on both is a refusal (`not a medical document`, `not about this patient`, `could not be verified`); the model's reason is logged, not returned. The ingest script does not run it.
 
-The upload is handled by the chat agent, not by calling these checks directly: [`controller/documents.py`](medas-api/controller/documents.py) runs it (`answer`) on the message "Please add the attached document … to my record." with the file as an attachment, and the agent calls `add_patient_document` (below). Whether the file was stored is read from the run's state (`RecordState.stored`, written by the tool), not from the reply, so a model that says it stored a file and didn't is still a `422`. The `422` detail is the agent's own message, so its wording varies. It costs about three model calls per upload (the agent's two steps plus `averify`) where calling the checks directly cost one.
+The upload is handled by the chat agent, not by calling these checks directly: [`controller/documents.py`](medas-api/controller/documents.py) writes the user turn `upload file requested`, runs the agent on the message "Please add the attached document … to my record." with the file as an attachment, and the agent calls `add_patient_document` (below). Its reply, stored or refused, becomes the assistant turn, so its wording varies; nothing but the reply reports the outcome. It costs about three model calls per upload (the agent's two steps plus `averify`) where calling the checks directly cost one.
 
 The hidden-text check reads characters with pdfplumber directly, because the LangChain loader doesn't expose font sizes or colours. Accepted files are loaded page by page with LangChain's `PDFPlumberLoader` and split with `RecursiveCharacterTextSplitter` (1,000 characters, 100 overlap), so most pages stay one chunk. The id includes a hash of the file's bytes, so a copy under another name (D14 duplicates D04) produces the same ids and is stored once. The [dataset README](medas-api/dataset/README.md#ingest-pipeline-for-pdfs) lists each document and the outcome it should get.
 
@@ -583,7 +583,7 @@ The build needs no API. `/` renders per request, so nothing is fetched while bui
 
 **Sending shows a red banner.** The banner quotes the API's own error. `Failed to fetch` means the Next server could not reach medas-api — check `API_BASE_URL` and that the API is running.
 
-**An upload shows a red snackbar.** Upload results appear as a snackbar at the top instead of the banner: green once the document is stored, red with the same error text on failure. A `422` there means the agent refused the file (see the checks above).
+**An upload answers in the chat.** The upload adds an `upload file requested` turn and the agent's reply, which says whether the file was stored or why it was refused (see the checks above). A red snackbar at the top means the request itself failed (API down, a `404`), and nothing was added to the chat.
 
 **A submit reloads the page with `?message=…` in the URL.** The form was submitted before React hydrated, so the browser did a plain GET. Harmless, and it resolves once the page finishes loading.
 

@@ -44,23 +44,27 @@ const send = async (url: string, init: RequestInit): Promise<Response> => {
   return response
 }
 
-const post = async <T>(
-  url: string,
-  body: unknown,
-  headers: Record<string, string>,
-): Promise<T> => {
-  const response = await send(url, {
-    headers: {
-      "Content-Type": "application/json",
-      ...headers,
-    },
-    body: JSON.stringify(body),
-  })
+// A POST to a route that answers with the conversation's new turns. The
+// conversation goes in the query, and is omitted rather than sent empty when
+// there is not one yet. The API answers in snake_case; this is mapped to
+// camelCase here so the convention stops at this boundary.
+const postTurns = async (
+  path: string,
+  conversationId: string | undefined,
+  init: RequestInit,
+): Promise<AskResult> => {
+  const url = new URL(`${API_BASE_URL}${path}`)
+
+  if (conversationId) {
+    url.searchParams.set("conversationId", conversationId)
+  }
+
+  const response = await send(url.toString(), init)
 
   // As in api/init.ts, this annotates the payload rather than validating it.
-  const data: T = await response.json()
+  const data: ConversationTurnsResponse = await response.json()
 
-  return data
+  return { conversationId: data.conversation_id, turns: data.messages }
 }
 
 // Asks the agent. Without a conversationId the API starts a conversation and
@@ -80,29 +84,25 @@ const ask = async (
   // here, next to the call it guards, and its token is what the API checks.
   const headers = await authorization()
 
-  const url = new URL(`${API_BASE_URL}/ask`)
-
-  if (conversationId) {
-    url.searchParams.set("conversationId", conversationId)
-  }
-
   // The body is the message itself -- role and text at the top level.
   // Wrapping it in { message } is a 422.
-  const data = await post<ConversationTurnsResponse>(
-    url.toString(),
-    message,
-    headers,
-  )
-
-  return { conversationId: data.conversation_id, turns: data.messages }
+  return postTurns("/ask", conversationId, {
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(message),
+  })
 }
 
 // Sends a PDF from the composer to the API. The FormData goes through as is,
 // and no Content-Type is set, so fetch writes the multipart boundary itself.
-const uploadPdf = async (formData: FormData): Promise<void> => {
+// Answers like ask: the upload request and the agent's answer to it, after
+// the greeting when it started the conversation.
+const uploadPdf = async (
+  formData: FormData,
+  conversationId?: string,
+): Promise<AskResult> => {
   const headers = await authorization()
 
-  await send(`${API_BASE_URL}/documents`, { headers, body: formData })
+  return postTurns("/documents", conversationId, { headers, body: formData })
 }
 
 export { ask, uploadPdf }
