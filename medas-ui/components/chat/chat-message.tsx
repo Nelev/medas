@@ -26,26 +26,31 @@ export function ChatMessage({ role, text, severity, ui }: ChatMessageProps) {
       speaker={role}
       isUrgent={isUrgent}
       footer={
-        severity ? (
-          // Stored with the turn and returned in the payload since the API
-          // started triaging; this is where it finally shows.
-          <span
-            className={`mt-1.5 inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[0.6875rem] tracking-[0.04em] uppercase ${
-              isUrgent
-                ? "border-pulse/45 text-pulse"
-                : "border-primary/30 text-primary"
-            }`}
-          >
+        <>
+          {/* Under the bubble rather than in it: a card inside a bubble
+              reads as a quote. */}
+          {ui ? <ReplyUI spec={ui} /> : null}
+          {severity ? (
+            // Stored with the turn and returned in the payload since the API
+            // started triaging; this is where it finally shows.
             <span
-              className={`size-1.5 rounded-full ${isUrgent ? "bg-pulse" : "bg-primary"}`}
-              aria-hidden
-            />
-            {severity} {SEVERITY_LABEL[severity]}
-          </span>
-        ) : null
+              className={`mt-1.5 inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[0.6875rem] tracking-[0.04em] uppercase ${
+                isUrgent
+                  ? "border-pulse/45 text-pulse"
+                  : "border-primary/30 text-primary"
+              }`}
+            >
+              <span
+                className={`size-1.5 rounded-full ${isUrgent ? "bg-pulse" : "bg-primary"}`}
+                aria-hidden
+              />
+              {severity} {SEVERITY_LABEL[severity]}
+            </span>
+          ) : null}
+        </>
       }
     >
-      {ui ? <ReplyUI spec={ui} fallback={text} /> : text}
+      {text}
     </MessageRow>
   )
 }
@@ -57,7 +62,8 @@ interface MessageRowProps extends Omit<
   // Not `role`: that name belongs to the bubble's ARIA role, passed through.
   speaker: ChatRole
   isUrgent?: boolean
-  // Under the bubble, inside the same column -- the severity chip.
+  // Under the bubble, inside the same column -- the reply card and the
+  // severity chip.
   footer?: ReactNode
 }
 

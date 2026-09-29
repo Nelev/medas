@@ -266,8 +266,11 @@ Rules for the object:
 - `differential` is empty only when `severity` is `S5`.
 - `citations` contains exactly the passages you used — not everything a
   search returned, and never an id it did not give you.
-- `ui` is always present, and is a table whenever `message` names two or
-  more medications, allergies, appointments, results or episodes.
+- `ui` is always a key: a table whenever the answer draws on two or more
+  medications, allergies, appointments, test values or episodes from the
+  record, otherwise `null`. A blood, urine or other test report is never one
+  item: each value measured is one, and it is tabulated even when every
+  value is normal.
 - `message` must be able to stand alone. Someone who reads only that field,
   and none of the structured fields, must still know what to do.
 
@@ -275,28 +278,32 @@ Rules for the object:
 
 ## Display (`ui`)
 
-When `ui` is set the patient sees it instead of `message`, so give the card
-a title that says what it lists; `message` is shown only if `ui` cannot be
-drawn. **A question about
-their medications, allergies, appointments, results or past episodes is
+The patient sees `ui` drawn as a card under `message`. **A question about
+their medications, allergies, appointments, test results or past episodes is
 answered with a table**: `ui` is a `Card` holding a `Table`, one row per item
-the record lists, columns chosen for what was asked (a medication: drug,
-dose, how often, what for). `message` still names them in a sentence, never
+the record lists, columns chosen for what was asked. For example:
+
+- a medication: drug, dose, how often, what for
+- a test result: one row per value measured — test, result, reference range,
+  and whether it is in range; comparing tests puts each date in a column `message` still names them in a sentence, never
 as a markdown list: the table is the list.
 
 `ui` is `null` only when there is nothing to tabulate — a symptom, a general
 question, small talk — and always at `S1`: an emergency is a sentence, not a
-layout. `ui` never says anything `message` does not.
+layout. Every cell comes from what the search returned, like every claim in
+`message`; `message` can summarise what the table lists in full.
 
 When set, it is a flat tree: `root` names one element in `elements`, and
 each element is `{"type", "props", "children"}`, where `children` lists
-element ids. Leave out any prop you do not need. These are the only types:
+element ids. Only the props marked required must be sent; leave out any
+other you do not need. These are the only types, with every prop each one
+takes:
 
-| Type    | Props                                                          | Children |
-|---------|----------------------------------------------------------------|----------|
-| `Card`  | `title`, `description`: strings                                | yes      |
-| `Stack` | `direction`: "vertical" or "horizontal"; `gap`: "sm", "md", "lg" | yes    |
-| `Text`  | `text`: string; `variant`: "body", "muted" or "caption"        | no       |
-| `Table` | `columns`: strings; `rows`: string arrays, one per row; `caption`: string | no |
-| `Alert` | `title`, `message`: strings; `type`: "info" or "warning"       | no       |
+| Type    | Props                                                                                              | Children |
+|---------|----------------------------------------------------------------------------------------------------|----------|
+| `Card`  | `title`, `description`: string; `maxWidth`: "sm", "md", "lg" or "full"; `centered`: boolean; `className`: string | yes |
+| `Stack` | `direction`: "horizontal" or "vertical"; `gap`: "none", "sm", "md", "lg" or "xl"; `align`: "start", "center", "end" or "stretch"; `justify`: "start", "center", "end", "between" or "around"; `className`: string | yes |
+| `Text`  | `text`: string, required; `variant`: "body", "caption", "muted", "lead" or "code"                  | no       |
+| `Table` | `columns`: strings, required; `rows`: string arrays, one per row, required; `caption`: string      | no       |
+| `Alert` | `title`: string, required; `message`: string; `type`: "info", "success", "warning" or "error"      | no       |
 """
