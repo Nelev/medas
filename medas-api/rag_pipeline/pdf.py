@@ -130,5 +130,6 @@ async def aindex_pdfs(paths: Iterable[Path], record: dict[str, Any]) -> int:
         except Rejected as exc:
             print(f"Skipped {path.name}: {exc}")
     if docs:
-        await get_vector_store().aadd_documents(list(docs.values()))
+        vector_store = get_vector_store()
+        await vector_store.aadd_documents(list(docs.values()))
     return len(docs)
