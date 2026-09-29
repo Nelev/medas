@@ -30,7 +30,7 @@ from utils import OPENROUTER_BASE_URL
 
 load_dotenv()
 
-MODEL_NAME = "openai/gpt-4o-mini"
+MODEL_NAME = "openai/gpt-4.1-mini"
 
 
 @dataclass(frozen=True)

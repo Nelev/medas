@@ -166,11 +166,11 @@ The route does not run a tool loop of its own. It assembles the conversation, ha
 1. **Assembles the turns.** Every stored message becomes `{role, content}` — the wire calls the field `text`, a chat model calls it `content` — and the new question goes last. The whole thread is sent, so the model answers in the context of everything said before rather than the last message alone.
 2. **Runs the agent.** [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py) is a `create_agent` graph with two tools (a search, and one for adding a PDF the patient attaches) and [`langchain_agent/assistant_general_prompt.py`](medas-api/langchain_agent/assistant_general_prompt.py) as its system prompt. The graph decides for itself whether to search, how many times, and when it has enough to answer — which is the thing the hand-rolled loop this replaced could not do.
 3. **Searches when it asks to.** The model cannot reach the vector store; only this process can, so a tool call is a question rather than an answer. `search_patient_record(query)` takes **only** a query: whose record is searched is fixed by the service, not chosen by the model, so a message claiming a different record id cannot become a read of somebody else's chart.
-4. **Reads the reply.** The prompt specifies one JSON object, so the route parses it for `message` — what the patient sees — and stores `severity` and `confidence` as metadata.
+4. **Reads the reply.** The prompt specifies one JSON object, so the route parses it for `message` — what the patient sees — and stores `severity` and `confidence` as metadata. An optional `ui` field, a [json-render](https://json-render.dev/docs/api/shadcn) spec limited to `Card`, `Stack`, `Text`, `Table` and `Alert`, is stored the same way and returned on the turn; the UI validates it against its catalog (`medas-ui/components/chat/reply-ui.tsx`) and draws it in place of the message text, falling back to the text when it does not validate.
 
 The prompt triages rather than diagnoses: a ranked differential, an explicit confidence, clarifying questions whenever that confidence is not high, and a severity rated on the **worst plausible cause** rather than the most likely one. Red flags lead the reply and force `S1`.
 
-The model is `openai/gpt-4o-mini`, named in [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py).
+The model is `openai/gpt-4.1-mini`, named in [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py).
 
 **The JSON is enforced by the transport, not just requested by the prompt.** `extra_body={"response_format": {"type": "json_object"}}` is on the chat model. That distinction cost real time and is worth recording: passing the same thing as `model_kwargs` does **not** work, because langchain routes through the OpenAI SDK's parsing helper whenever `response_format` is in the payload it builds, and that helper rejects any tool that is not `strict` (`search_patient_record is not strict`). `extra_body` reaches the provider without passing through that check.
 
@@ -219,7 +219,7 @@ flowchart LR
     EQ --> K["top 5 by cosine distance, only this patient's rows"]
   end
   T --> K
-  K --> A["agent (gpt-4o-mini): JSON reply citing chunk ids"]
+  K --> A["agent (gpt-4.1-mini): JSON reply citing chunk ids"]
 ```
 
 Build or refresh the index with one command. It makes one billable embedding call per chunk:

@@ -249,7 +249,14 @@ so malformed output is a failed response no matter how good the reasoning.
   ],
   "safety_net": "The specific signs that mean seek care sooner. Required for S2, S3 and S4; empty string for S1 and S5.",
   "citations": ["chunk_id of every passage you relied on"],
-  "record_gaps": "What you searched for and did not find, or an empty string"
+  "record_gaps": "What you searched for and did not find, or an empty string",
+  "ui": {
+    "root": "card",
+    "elements": {
+      "card": {"type": "Card", "props": {"title": "What the table lists"}, "children": ["table"]},
+      "table": {"type": "Table", "props": {"columns": ["Item", "Detail"], "rows": [["One row per item", "From the record"]]}, "children": []}
+    }
+  }
 }
 ```
 
@@ -259,6 +266,37 @@ Rules for the object:
 - `differential` is empty only when `severity` is `S5`.
 - `citations` contains exactly the passages you used — not everything a
   search returned, and never an id it did not give you.
+- `ui` is always present, and is a table whenever `message` names two or
+  more medications, allergies, appointments, results or episodes.
 - `message` must be able to stand alone. Someone who reads only that field,
   and none of the structured fields, must still know what to do.
+
+---
+
+## Display (`ui`)
+
+When `ui` is set the patient sees it instead of `message`, so give the card
+a title that says what it lists; `message` is shown only if `ui` cannot be
+drawn. **A question about
+their medications, allergies, appointments, results or past episodes is
+answered with a table**: `ui` is a `Card` holding a `Table`, one row per item
+the record lists, columns chosen for what was asked (a medication: drug,
+dose, how often, what for). `message` still names them in a sentence, never
+as a markdown list: the table is the list.
+
+`ui` is `null` only when there is nothing to tabulate — a symptom, a general
+question, small talk — and always at `S1`: an emergency is a sentence, not a
+layout. `ui` never says anything `message` does not.
+
+When set, it is a flat tree: `root` names one element in `elements`, and
+each element is `{"type", "props", "children"}`, where `children` lists
+element ids. Leave out any prop you do not need. These are the only types:
+
+| Type    | Props                                                          | Children |
+|---------|----------------------------------------------------------------|----------|
+| `Card`  | `title`, `description`: strings                                | yes      |
+| `Stack` | `direction`: "vertical" or "horizontal"; `gap`: "sm", "md", "lg" | yes    |
+| `Text`  | `text`: string; `variant`: "body", "muted" or "caption"        | no       |
+| `Table` | `columns`: strings; `rows`: string arrays, one per row; `caption`: string | no |
+| `Alert` | `title`, `message`: strings; `type`: "info" or "warning"       | no       |
 """

@@ -55,6 +55,7 @@ export function ChatMessages({ initialMessages }: ChatMessagesProps) {
           role={message.role}
           text={message.text}
           severity={message.severity}
+          ui={message.ui}
         />
       ))}
       {/* Up for exactly as long as a message is in flight: the reply lands
