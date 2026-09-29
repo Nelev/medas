@@ -17,16 +17,14 @@ const table = (type: string) => ({
 
 describe("ReplyUI", () => {
   it("draws a spec the catalog accepts", () => {
-    render(<ReplyUI spec={table("Table")} fallback="In words" />)
+    render(<ReplyUI spec={table("Table")} />)
 
     expect(screen.getByRole("table")).toHaveTextContent("Omeprazole")
-    expect(screen.queryByText("In words")).not.toBeInTheDocument()
   })
 
-  it("falls back to the text for a type outside the catalog", () => {
-    render(<ReplyUI spec={table("Chart")} fallback="In words" />)
+  it("draws nothing for a type outside the catalog", () => {
+    const { container } = render(<ReplyUI spec={table("Chart")} />)
 
-    expect(screen.getByText("In words")).toBeInTheDocument()
-    expect(screen.queryByRole("table")).not.toBeInTheDocument()
+    expect(container).toBeEmptyDOMElement()
   })
 })

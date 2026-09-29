@@ -33,9 +33,9 @@ def parse_agent_reply(reply: str) -> tuple[str, dict]:
     metadata because which code was given, and when, is what an audit asks
     about later.
 
-    `ui`, when the model sent one, is a json-render spec the UI draws in
-    place of the message. It is stored as given: its catalog lives in the UI, which
-    validates it before rendering and falls back to the text alone.
+    `ui`, when the model sent one, is a json-render spec the UI draws under
+    the message. It is stored as given: its catalog lives in the UI, which
+    validates it before rendering and drops it if it does not fit.
     """
     try:
         answer = json.loads(reply)
