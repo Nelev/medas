@@ -32,12 +32,17 @@ def parse_agent_reply(reply: str) -> tuple[str, dict]:
     patient sees `message`, and the triage code travels with the turn as
     metadata because which code was given, and when, is what an audit asks
     about later.
+
+    `ui`, when the model sent one, is a json-render spec the UI draws in
+    place of the message. It is stored as given: its catalog lives in the UI, which
+    validates it before rendering and falls back to the text alone.
     """
     try:
         answer = json.loads(reply)
         return answer["message"], {
             "severity": answer.get("severity"),
             "confidence": answer.get("confidence"),
+            "ui": answer.get("ui"),
         }
     except json.JSONDecodeError, KeyError, TypeError:
         # Prose where an object was asked for. The model does this on its own

@@ -4,6 +4,7 @@ import type { ComponentProps, ReactNode } from "react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Message, MessageAvatar, MessageContent } from "@/components/ui/message"
+import { ReplyUI } from "@/components/chat/reply-ui"
 import { ChatMessageProps, ChatRole, Severity } from "@/model/ChatMessage"
 
 // Straight from the prompt's table, shortened to fit a chip. The code is
@@ -16,7 +17,7 @@ const SEVERITY_LABEL: Record<Severity, string> = {
   S5: "informational",
 }
 
-export function ChatMessage({ role, text, severity }: ChatMessageProps) {
+export function ChatMessage({ role, text, severity, ui }: ChatMessageProps) {
   // The one case the accent colour is spent on: an answer that says go now.
   const isUrgent = severity === "S1"
 
@@ -44,7 +45,7 @@ export function ChatMessage({ role, text, severity }: ChatMessageProps) {
         ) : null
       }
     >
-      {text}
+      {ui ? <ReplyUI spec={ui} fallback={text} /> : text}
     </MessageRow>
   )
 }

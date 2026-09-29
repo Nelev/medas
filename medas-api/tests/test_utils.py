@@ -27,8 +27,15 @@ def test_a_json_reply_is_its_message_and_its_triage_code():
 
     assert parse_agent_reply(reply) == (
         "See your GP this week.",
-        {"severity": "S3", "confidence": 0.8},
+        {"severity": "S3", "confidence": 0.8, "ui": None},
     )
+
+
+def test_a_ui_spec_travels_with_the_turn():
+    spec = {"root": "a", "elements": {"a": {"type": "Text", "props": {}}}}
+    reply = json.dumps({"message": "Your readings.", "severity": "S5", "ui": spec})
+
+    assert parse_agent_reply(reply)[1]["ui"] == spec
 
 
 @pytest.mark.parametrize(

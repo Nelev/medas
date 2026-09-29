@@ -3,6 +3,10 @@
 @import "shadcn/tailwind.css";
 @import "@clerk/ui/themes/shadcn.css";
 
+/* Tailwind skips node_modules when scanning for classes, and json-render's
+   components carry theirs in its dist. */
+@source "../node_modules/@json-render/shadcn/dist";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

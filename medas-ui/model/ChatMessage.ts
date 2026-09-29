@@ -8,4 +8,6 @@ export interface ChatMessageProps {
   role: ChatRole
   text: string
   severity?: Severity
+  // A json-render spec the assistant may attach; unvalidated until drawn.
+  ui?: unknown
 }
