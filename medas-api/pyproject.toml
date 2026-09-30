@@ -21,6 +21,7 @@ dependencies = [
     "psycopg[binary,pool]>=3.3.5",
     "pydantic-settings>=2.15.0",
     "python-dotenv>=1.2.3",
+    "reportlab>=5.0.1",
     "sqlalchemy[asyncio]>=2.0.53",
 ]
 

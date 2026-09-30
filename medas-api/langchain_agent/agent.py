@@ -21,9 +21,11 @@ from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.tools import ToolRuntime, tool
 from langchain_openai import ChatOpenAI
+from starlette.concurrency import run_in_threadpool
 
 from langchain_agent.assistant_general_prompt import ASSISTANT_SYSTEM_PROMPT
 from langchain_agent.documents import Attachment, add_document
+from langchain_agent.export import export_conversation
 from rag_pipeline.pdf import Rejected
 from rag_pipeline.search import search_record
 from utils import OPENROUTER_BASE_URL
@@ -85,6 +87,21 @@ async def add_patient_document(
     return _reply(document, "stored", chunks=chunks)
 
 
+@tool
+async def export_conversation_pdf(runtime: ToolRuntime[RecordContext]) -> str:
+    """Export this conversation as a PDF file, when the patient asks for it."""
+    # The turns come from the run's own state, so there is nothing for the
+    # model to name: it can export this conversation and no other.
+    turns = [
+        {"role": "user" if m.type == "human" else "assistant", "content": m.content}
+        for m in runtime.state["messages"]
+        # Tool calls and their results are the agent's workings, not the chat.
+        if m.type in ("human", "ai") and m.content
+    ]
+    file = await run_in_threadpool(export_conversation, turns)
+    return json.dumps({"status": "exported", "file": file, "turns": len(turns)})
+
+
 @lru_cache
 def build_agent():
     """The compiled graph, built on first call rather than at import.
@@ -99,7 +116,7 @@ def build_agent():
             api_key=os.getenv("OPENROUTER_API_KEY"),
             extra_body={"response_format": {"type": "json_object"}},
         ),
-        tools=[search_patient_record, add_patient_document],
+        tools=[search_patient_record, add_patient_document, export_conversation_pdf],
         system_prompt=ASSISTANT_SYSTEM_PROMPT,
         context_schema=RecordContext,
     )
