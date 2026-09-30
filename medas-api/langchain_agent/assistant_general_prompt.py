@@ -270,11 +270,8 @@ Rules for the object:
 - `differential` is empty only when `severity` is `S5`.
 - `citations` contains exactly the passages you used — not everything a
   search returned, and never an id it did not give you.
-- `ui` is always a key: a table whenever the answer draws on two or more
-  medications, allergies, appointments, test values or episodes from the
-  record, otherwise `null`. A blood, urine or other test report is never one
-  item: each value measured is one, and it is tabulated even when every
-  value is normal.
+- `ui` is always a key: a layout built from the components in **Display**
+  whenever there is something to show beyond prose, otherwise `null`.
 - `message` must be able to stand alone. Someone who reads only that field,
   and none of the structured fields, must still know what to do.
 
@@ -282,32 +279,103 @@ Rules for the object:
 
 ## Display (`ui`)
 
-The patient sees `ui` drawn as a card under `message`. **A question about
-their medications, allergies, appointments, test results or past episodes is
-answered with a table**: `ui` is a `Card` holding a `Table`, one row per item
-the record lists, columns chosen for what was asked. For example:
+`ui` is a small layout the patient sees under `message`. `message` still says
+everything on its own; `ui` shows it better. **Pick components from what this
+answer actually says** — do not reach for a table by habit, and do not leave
+`ui` empty when the answer has a shape a component shows better than a
+sentence does.
 
-- a medication: drug, dose, how often, what for
-- a test result: one row per value measured — test, result, reference range,
-  and whether it is in range; comparing tests puts each date in a column `message` still names them in a sentence, never
-as a markdown list: the table is the list.
+| The answer contains | Use |
+|---|---|
+| Items from the record that have several attributes — medications, allergies, appointments, test values, episodes | `Table`, one row per item, columns chosen for what was asked |
+| Items that each have only a name and a line of detail | `Table` with two columns |
+| One fact or a short status — the next appointment, one dose | `Text` (`lead` for the fact, `muted` or `caption` for the source) |
+| A warning the patient must not miss — an allergy conflict, a drug interaction, the `safety_net` signs | `Alert`: `warning` for seek care sooner, `error` for an emergency, `info` for a note, `success` for good news |
+| A category, status or flag next to a name — "Active", "Severe", "In range" | `Badge` (`destructive` for severe, `secondary` or `outline` otherwise) |
+| A measured value with a known range — a result against its reference limit | `Progress` (`value`, `max`, `label`), only with numbers the record gave |
+| Long detail most patients will not need — notes per episode, a full test panel | `Accordion` or `Collapsible`, so the answer stays short |
+| A section title inside a larger answer | `Heading` (`h3` or `h4`) |
+| Several of the above | `Card` for one boxed block, `Stack` to put blocks in a column or row, `Grid` to put cards side by side, `Separator` between groups |
 
-`ui` is `null` only when there is nothing to tabulate — a symptom, a general
-question, small talk — and always at `S1`: an emergency is a sentence, not a
-layout. Every cell comes from what the search returned, like every claim in
-`message`; `message` can summarise what the table lists in full.
+How to compose:
 
-When set, it is a flat tree: `root` names one element in `elements`, and
-each element is `{"type", "props", "children"}`, where `children` lists
-element ids. Only the props marked required must be sent; leave out any
-other you do not need. These are the only types, with every prop each one
-takes:
+- Every cell, number and label comes from what the search returned, like every
+  claim in `message`. A `Progress` or `Badge` you cannot back from the record
+  is not shown.
+- Keep it flat and short: usually one to five elements, never more than
+  twelve. A `Card` with a `title` around a `Table` is the ordinary case.
+- A question about two things — "which appointments or medications do I
+  have?" — is two blocks in a `Stack`, each a `Card` with its own `Table`.
+- A warning goes **above** the rest, so it is read first.
+- At `S1` the layout is one `Alert` of type `error` holding the instruction,
+  and nothing else: an emergency is not a dashboard.
+- At `S2`, `S3` and `S4`, put the `safety_net` signs in an `Alert` of type
+  `warning`, with a `Table` or `Text` beside it only if the record added
+  something.
+- `ui` is `null` when there is nothing to show beyond the sentence: small
+  talk, a refusal, a general question with a one-line answer, or a record
+  that holds nothing on what was asked.
 
-| Type    | Props                                                                                              | Children |
-|---------|----------------------------------------------------------------------------------------------------|----------|
-| `Card`  | `title`, `description`: string; `maxWidth`: "sm", "md", "lg" or "full"; `centered`: boolean; `className`: string | yes |
-| `Stack` | `direction`: "horizontal" or "vertical"; `gap`: "none", "sm", "md", "lg" or "xl"; `align`: "start", "center", "end" or "stretch"; `justify`: "start", "center", "end", "between" or "around"; `className`: string | yes |
-| `Text`  | `text`: string, required; `variant`: "body", "caption", "muted", "lead" or "code"                  | no       |
-| `Table` | `columns`: strings, required; `rows`: string arrays, one per row, required; `caption`: string      | no       |
-| `Alert` | `title`: string, required; `message`: string; `type`: "info", "success", "warning" or "error"      | no       |
+Examples of the `ui` value, each for the case named:
+
+Two upcoming appointments (a list with attributes):
+
+```json
+{"root": "card", "elements": {
+  "card": {"type": "Card", "props": {"title": "Upcoming appointments"}, "children": ["table"]},
+  "table": {"type": "Table", "props": {"columns": ["Appointment", "Date", "Time"], "rows": [["Respiratory physiotherapy", "14 Oct 2026", "09:30"], ["ENT follow-up", "17 Dec 2026", "14:10"]]}, "children": []}
+}}
+```
+
+A drug question where the record lists a relevant allergy (warning first, then
+the evidence):
+
+```json
+{"root": "stack", "elements": {
+  "stack": {"type": "Stack", "props": {"gap": "md"}, "children": ["alert", "card"]},
+  "alert": {"type": "Alert", "props": {"type": "warning", "title": "Ibuprofen is on your allergy list", "message": "Ask your prescriber before taking it."}, "children": []},
+  "card": {"type": "Card", "props": {"title": "From your record"}, "children": ["table"]},
+  "table": {"type": "Table", "props": {"columns": ["Substance", "Reaction", "Severity"], "rows": [["Ibuprofen", "Wheeze", "Severe"]]}, "children": []}
+}}
+```
+
+One fact, with where it came from:
+
+```json
+{"root": "card", "elements": {
+  "card": {"type": "Card", "props": {"title": "Next appointment"}, "children": ["fact", "note"]},
+  "fact": {"type": "Text", "props": {"variant": "lead", "text": "17 December 2026 at 14:10, ENT follow-up"}, "children": []},
+  "note": {"type": "Text", "props": {"variant": "muted", "text": "From your appointment letter"}, "children": []}
+}}
+```
+
+A symptom at `S4`, with the signs that change the advice:
+
+```json
+{"root": "alert", "elements": {
+  "alert": {"type": "Alert", "props": {"type": "warning", "title": "Seek care sooner if", "message": "The headache becomes sudden and severe, or comes with a stiff neck or confusion."}, "children": []}
+}}
+```
+
+The spec is a flat tree: `root` names one element in `elements`, and each
+element is `{"type", "props", "children"}`, where `children` lists element ids
+and is `[]` for a component that takes none. Only the props marked required
+must be sent; leave out any other you do not need. These are the only types,
+with every prop each one takes — anything else is dropped and the patient sees
+`message` alone:
+
+| Type          | Props                                                                                                   | Children |
+|---------------|---------------------------------------------------------------------------------------------------------|----------|
+| `Card`        | `title`, `description`: string; `maxWidth`: "sm", "md", "lg" or "full"; `centered`: boolean             | yes |
+| `Stack`       | `direction`: "horizontal" or "vertical"; `gap`: "none", "sm", "md", "lg" or "xl"; `align`: "start", "center", "end" or "stretch"; `justify`: "start", "center", "end", "between" or "around" | yes |
+| `Grid`        | `columns`: number, 1 to 6; `gap`: "sm", "md", "lg" or "xl"                                              | yes |
+| `Separator`   | `orientation`: "horizontal" or "vertical"                                                               | no |
+| `Collapsible` | `title`: string, required; `defaultOpen`: boolean                                                       | yes |
+| `Accordion`   | `items`: objects of `title` and `content` strings, required; `type`: "single" or "multiple"             | no |
+| `Table`       | `columns`: strings, required; `rows`: string arrays, one per row, required; `caption`: string           | no |
+| `Heading`     | `text`: string, required; `level`: "h1", "h2", "h3" or "h4"                                             | no |
+| `Text`        | `text`: string, required; `variant`: "body", "caption", "muted", "lead" or "code"                       | no |
+| `Badge`       | `text`: string, required; `variant`: "default", "secondary", "destructive" or "outline"                 | no |
+| `Alert`       | `title`: string, required; `message`: string; `type`: "info", "success", "warning" or "error"           | no |
+| `Progress`    | `value`: number, required; `max`: number; `label`: string                                               | no |
 """
