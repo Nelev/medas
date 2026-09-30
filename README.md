@@ -207,8 +207,9 @@ The agent answers from passages of the patient's own record, retrieved while it 
 flowchart LR
   subgraph ingest["Ingest: uv run python -m rag_pipeline.ingest"]
     J["medical_history.json"] --> C["chunks.py: one chunk per record entry"]
-    P["dataset/documents/*.pdf"] --> G{"pdf.py: five checks"}
-    G -->|accepted| S["PDFPlumberLoader, then RecursiveCharacterTextSplitter"]
+    P["dataset/documents/*.pdf"] --> G{"pdf.py: five checks, name and DOB among them"}
+    G -->|accepted| M["redact.py: Presidio masks PII"]
+    M --> S["PDFPlumberLoader pages, then RecursiveCharacterTextSplitter"]
     G -->|refused| X["logged, not indexed"]
   end
   C --> E["embed: text-embedding-3-small"]
@@ -255,13 +256,30 @@ The chunk ids are what the agent cites, and what the evaluation matches against 
 | This patient's | The record's date of birth appears in the text                                   | D10 (a namesake), D12 (motor insurance) |
 | Same surname   | The record's surname appears too, so a stranger born the same day is not a match | —                                       |
 
+**The name and date-of-birth check is deterministic.** It is plain string matching on the file's own text, with no model involved, and it runs locally before anything is masked, embedded or sent anywhere. Both must hold, because each alone lets the wrong file in: a namesake's letter carries the name, and a stranger born the same day shares the date of birth.
+
+- **Date of birth:** the record's date must appear either as ISO (`1980-06-07`) or in the UK day-first form the letters use (`07/06/1980`). Any other form (US order, `7 June 1980`) is read as not this patient: a miss, never a false match. A document with no date of birth at all (a leaflet, an insurance renewal) is not part of a medical record, so the same check keeps unrelated files out.
+- **Surname:** the last word of the record's name, compared case-insensitively (`surname()` in [`rag_pipeline/chunks.py`](medas-api/rag_pipeline/chunks.py)). The surname only, since letters often shorten the first name to an initial.
+
+A miss on either refuses the file as `not this patient`. The masking below uses the same `surname()`, so the two can't disagree about who the patient is.
+
 An upload through `POST /documents` gets one more check after these, before anything is embedded: [`rag_pipeline/verify.py`](medas-api/rag_pipeline/verify.py) (`averify`) asks `openai/gpt-4o-mini` whether the document is medical and about this patient, given the identity line and the first 4,000 characters of the file's own text. Anything but a clear yes on both is a refusal (`not a medical document`, `not about this patient`, `could not be verified`); the model's reason is logged, not returned. The ingest script does not run it.
 
 The upload is handled by the chat agent, not by calling these checks directly: [`controller/documents.py`](medas-api/controller/documents.py) writes the user turn `upload file requested: <file name>`, runs the agent on the message "Please add the attached document … to my record." with the file as an attachment, and the agent calls `add_patient_document` (below). Its reply, stored or refused, becomes the assistant turn, so its wording varies; nothing but the reply reports the outcome. It costs about three model calls per upload (the agent's two steps plus `averify`) where calling the checks directly cost one.
 
 The hidden-text check reads characters with pdfplumber directly, because the LangChain loader doesn't expose font sizes or colours. Accepted files are loaded page by page with LangChain's `PDFPlumberLoader` and split with `RecursiveCharacterTextSplitter` (1,000 characters, 100 overlap), so most pages stay one chunk. The id includes a hash of the file's bytes, so a copy under another name (D14 duplicates D04) produces the same ids and is stored once. The [dataset README](medas-api/dataset/README.md#ingest-pipeline-for-pdfs) lists each document and the outcome it should get.
 
-**PII masking.** After the checks pass, [`rag_pipeline/redact.py`](medas-api/rag_pipeline/redact.py) (`mask_pii`, [Presidio](https://presidio.dataprivacystack.org/)) replaces each page's phone numbers, emails, NHS/NI numbers, IBANs, card and IP numbers, and other people's names with `<ENTITY_TYPE>` before the page is split, embedded or shown to the verify model. The checks themselves run on the raw text, which never leaves `load_pdf`. The patient's own name, their date of birth and all other dates are left alone: they are in the record and on every chunk's identity line, and retrieval depends on them. A `PERSON` is masked only if it is a full name or follows a title (Dr, Mr, …), because the small English spaCy model otherwise tags terms like "GORD" as people. Changing what is masked changes the chunk ids, so `rag_pipeline.ingest` deletes the patient's `document` chunks before re-adding them.
+**PII masking.** Once the checks pass, [`rag_pipeline/redact.py`](medas-api/rag_pipeline/redact.py) (`mask_pii`) runs each page's text through [Presidio](https://presidio.dataprivacystack.org/): the analyzer finds entities (regex and checksum recognizers plus spaCy `en_core_web_sm` for names), and the anonymizer replaces each with `<ENTITY_TYPE>`. This happens before the page is split, so an entity is never cut by a chunk boundary, and before the text is embedded or shown to the verify model, so neither sees it. The checks above read the raw text, which never leaves `load_pdf`; `LoadedPdf.text`, which `averify` reads, is the masked text.
+
+| Masked                                                            | Kept                                                                                                               |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `PHONE_NUMBER`, `EMAIL_ADDRESS`, `UK_NHS`, `UK_NINO`, `IBAN_CODE` | The patient's own name, and their date of birth: they are in the record and on every chunk's identity line already |
+| `CREDIT_CARD`, `IP_ADDRESS`                                       | Every date (`DATE_TIME` is not analysed): retrieval depends on "when was my last blood test?"                      |
+| `PERSON`: clinicians, relatives and anyone who is not the patient | Diagnoses, drugs and places, which the analyzer's other entity types would misread                                 |
+
+Two rules keep the model's mistakes out of the index. The entity list is fixed rather than everything Presidio knows, because the small model tags conditions and drugs as `ORGANIZATION` or `LOCATION`. And a `PERSON` is masked only if it is a full name or follows a title (Dr, Mr, Mrs, …), because a lone capitalised word is nearly always a term misread as a name ("GORD"). A name containing the patient's surname is never masked.
+
+Retrieval sees the effect directly: chunk text and offsets change, so chunk ids change, and a query like "what did Dr Patel say?" loses its anchor, since the name is now `<PERSON>`. Because ids depend on the masked text, `rag_pipeline.ingest` first deletes the old chunks of the files it is about to re-index (matched on the file's id prefix), so a change to what is masked does not leave unmasked copies behind. PDFs attached through the agent, which are not in `dataset/documents/`, are left alone.
 
 ### 3. Embedding and the index
 
