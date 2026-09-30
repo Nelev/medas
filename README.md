@@ -261,6 +261,8 @@ The upload is handled by the chat agent, not by calling these checks directly: [
 
 The hidden-text check reads characters with pdfplumber directly, because the LangChain loader doesn't expose font sizes or colours. Accepted files are loaded page by page with LangChain's `PDFPlumberLoader` and split with `RecursiveCharacterTextSplitter` (1,000 characters, 100 overlap), so most pages stay one chunk. The id includes a hash of the file's bytes, so a copy under another name (D14 duplicates D04) produces the same ids and is stored once. The [dataset README](medas-api/dataset/README.md#ingest-pipeline-for-pdfs) lists each document and the outcome it should get.
 
+**PII masking.** After the checks pass, [`rag_pipeline/redact.py`](medas-api/rag_pipeline/redact.py) (`mask_pii`, [Presidio](https://presidio.dataprivacystack.org/)) replaces each page's phone numbers, emails, NHS/NI numbers, IBANs, card and IP numbers, and other people's names with `<ENTITY_TYPE>` before the page is split, embedded or shown to the verify model. The checks themselves run on the raw text, which never leaves `load_pdf`. The patient's own name, their date of birth and all other dates are left alone: they are in the record and on every chunk's identity line, and retrieval depends on them. A `PERSON` is masked only if it is a full name or follows a title (Dr, Mr, …), because the small English spaCy model otherwise tags terms like "GORD" as people. Changing what is masked changes the chunk ids, so `rag_pipeline.ingest` deletes the patient's `document` chunks before re-adding them.
+
 ### 3. Embedding and the index
 
 [`rag_pipeline/ingest.py`](medas-api/rag_pipeline/ingest.py) embeds every chunk with `openai/text-embedding-3-small` through OpenRouter and upserts it into `record_chunks`, keyed on the chunk id. Re-running replaces rows rather than adding to them. The embedding calls sit behind `run()`, so importing the module fires nothing.
@@ -648,6 +650,7 @@ Safety and correctness first, because these are the ones that matter if this eve
 - **History is sent whole.** Every stored turn goes to the model on every request, and the transcript is re-sent on each turn within a run, so a long thread costs more with every message in it.
 - **Chat can't attach files yet.** `POST /ask` does not accept files, so in a conversation the document tool answers `not attached`; only `POST /documents` reaches them. It also has no size cap: the upload is read into memory whole.
 - **A search returns five passages.** `n_results=5`, so a question like "what episodes are in my record?" is answered from the five nearest chunks — the record holds ten episodes, and the model has no way to know it saw half of them.
+- **PII masking is English-only and only in PDFs.** Non-English documents (D08 is Italian) get some ordinary words masked as `<PERSON>`, and the record JSON and the identity line are not masked. The patient's own name and date of birth are kept on purpose. Masked chunks have not been run through the eval yet, so the effect on recall is unmeasured.
 
 Then the smaller ones:
 

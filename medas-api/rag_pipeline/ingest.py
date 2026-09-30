@@ -5,8 +5,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain_core.documents import Document
+from sqlalchemy import delete
 
 from database.database import dispose_engine, init_engine
+from model.record_chunk import RecordChunk
 from rag_pipeline.chunks import iter_chunks
 from rag_pipeline.pdf import aindex_pdfs
 from rag_pipeline.record import load_record
@@ -33,11 +35,21 @@ def load_documents(record: dict) -> list[Document]:
 async def run():
     # Kept in a function: add_documents and similarity_search make billable
     # embedding calls, so importing this module must not fire them.
-    vector_store = await init_vector_store(init_engine())
+    engine = init_engine()
+    vector_store = await init_vector_store(engine)
     try:
         record = load_record()
         docs = load_documents(record)
         await vector_store.aadd_documents(docs)
+        # Chunk ids depend on the masked text, so a change to what is masked
+        # would leave the old chunks behind under ids nothing replaces.
+        async with engine.begin() as conn:
+            await conn.execute(
+                delete(RecordChunk).where(
+                    RecordChunk.patient_id == record["id"],
+                    RecordChunk.kind == "document",
+                )
+            )
         pdf_chunks = await aindex_pdfs(sorted(DOCUMENTS_PATH.glob("*.pdf")), record)
         print(f"Indexed {len(docs)} record chunks and {pdf_chunks} PDF chunks")
 
