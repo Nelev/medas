@@ -16,6 +16,8 @@ from presidio_analyzer import AnalyzerEngine
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_anonymizer import AnonymizerEngine
 
+from rag_pipeline.chunks import surname
+
 __all__ = ["mask_pii"]
 
 # A fixed list rather than every entity Presidio knows: the small spaCy model
@@ -45,7 +47,9 @@ _TITLE = re.compile(r"(?:Dr|Mr|Mrs|Ms|Miss|Prof|Professor|Nurse|Sister)\.?\s+$"
 
 
 def _is_person(text: str, start: int, end: int) -> bool:
-    return len(text[start:end].split()) > 1 or bool(_TITLE.search(text[:start]))
+    return len(text[start:end].split()) > 1 or bool(
+        _TITLE.search(text[max(0, start - 20) : start])
+    )
 
 
 @lru_cache
@@ -69,7 +73,7 @@ def _anonymizer() -> AnonymizerEngine:
 def mask_pii(text: str, record: dict[str, Any]) -> str:
     """`text` with each detected entity replaced by `<ENTITY_TYPE>`, except
     the patient of `record`, named by surname as in the identity check."""
-    surname = record["name"].split()[-1].casefold()
+    name = surname(record)
     found = [
         r
         for r in _analyzer().analyze(
@@ -78,7 +82,7 @@ def mask_pii(text: str, record: dict[str, Any]) -> str:
         if r.entity_type != "PERSON"
         or (
             _is_person(text, r.start, r.end)
-            and surname not in text[r.start : r.end].casefold()
+            and name not in text[r.start : r.end].casefold()
         )
     ]
     return _anonymizer().anonymize(text=text, analyzer_results=found).text

@@ -23,6 +23,12 @@ def patient_prefix(doc: dict[str, Any]) -> str:
     return f"Patient {doc['name']} (DOB {doc['dob']}, {doc['sex']})"
 
 
+def surname(record: dict[str, Any]) -> str:
+    """The patient's surname, casefolded: what a document is matched on, since
+    letters often shorten the first name to an initial."""
+    return record["name"].split()[-1].casefold()
+
+
 def _episode_text(doc: dict[str, Any], ep: dict[str, Any]) -> str:
     return (
         f"{patient_prefix(doc)}. "

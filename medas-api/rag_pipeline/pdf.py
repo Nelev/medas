@@ -11,7 +11,7 @@ from langchain_community.document_loaders import PDFPlumberLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from rag_pipeline.chunks import patient_prefix
+from rag_pipeline.chunks import patient_prefix, surname
 from rag_pipeline.redact import mask_pii
 from rag_pipeline.vector_store import get_vector_store
 
@@ -90,7 +90,7 @@ def load_pdf(path: Path, record: dict[str, Any]) -> LoadedPdf:
     dob = record["dob"]
     if dob not in text and f"{date.fromisoformat(dob):%d/%m/%Y}" not in text:
         raise Rejected("not this patient")
-    if record["name"].split()[-1].casefold() not in text.casefold():
+    if surname(record) not in text.casefold():
         raise Rejected("not this patient")
 
     # Masked only now: the checks above need the raw text, which never leaves
