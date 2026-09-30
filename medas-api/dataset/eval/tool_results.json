@@ -1,0 +1,202 @@
+[
+  {
+    "query": "What medications am I currently taking?",
+    "expected_tool": "search_patient_record",
+    "expected_params": {
+      "query": [
+        "medication"
+      ]
+    },
+    "difficulty": "easy",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": "search_patient_record",
+    "actual_params": {
+      "query": "current medication"
+    },
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"Your current medications are not listed in the parts of the record available to me. However, the record shows you have an allergy to penicillin.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [\"c1\"],\n  \"record_gaps\": \"Searched for current medications and medication list but found none in the record.\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "Am I allergic to ibuprofen?",
+    "expected_tool": "search_patient_record",
+    "expected_params": {
+      "query": [
+        "ibuprofen"
+      ]
+    },
+    "difficulty": "easy",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": "search_patient_record",
+    "actual_params": {
+      "query": "ibuprofen allergy"
+    },
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"Your record shows an allergy to penicillin, but it does not mention any allergy to ibuprofen.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [\"c1\"],\n  \"record_gaps\": \"searched for ibuprofen allergy\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "upload file requested: letter.pdf",
+    "expected_tool": "add_patient_document",
+    "expected_params": {
+      "document": [
+        "letter.pdf"
+      ]
+    },
+    "difficulty": "easy",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": "add_patient_document",
+    "actual_params": {
+      "document": "letter.pdf"
+    },
+    "response": "{\n  \"severity\": \"S3\",\n  \"confidence\": \"high\",\n  \"message\": \"You mentioned chest pain. Your record does not mention chest pain symptoms or related cardiac problems. You are allergic to penicillin, which is important for treatment decisions. Chest pain can have many causes, some serious and some less so. Since you did not describe severe symptoms like sweating, nausea, pain spreading to arm, jaw, or back, or difficulty breathing, urgent emergency care is not indicated now. However, chest pain should be evaluated by a doctor soon to determine its cause.\",\n  \"differential\": [\n    {\n      \"possibility\": \"Musculoskeletal pain\",\n      \"supports\": \"No mention of chest pain in your medical history suggests a new, possibly benign cause such as muscle strain.\",\n      \"against\": \"Did not describe pain increasing with movement or palpation explicitly.\"\n    },\n    {\n      \"possibility\": \"Gastroesophageal reflux or indigestion\",\n      \"supports\": \"Common cause of chest discomfort, not ruled out by history.\",\n      \"against\": \"No typical symptoms like burning sensation reported.\"\n    },\n    {\n      \"possibility\": \"Cardiac cause (angina or other)\",\n      \"supports\": \"Chest pain itself is a key symptom, but no records or symptoms pointing specifically to heart disease currently.\",\n      \"against\": \"Lack of typical associated symptoms such as sweating, nausea, or pain radiation reduces likelihood.\"\n    }\n  ],\n  \"questions\": [\n    \"When did the chest pain start and how long does it last?\",\n    \"Can you describe the pain? Is it sharp, dull, burning, or pressure-like?\",\n    \"Do any activities or positions make the pain better or worse?\"\n  ],\n  \"safety_net\": \"Seek urgent care if you develop chest pain with sweating, nausea, pain spreading to your arm, jaw or back, or any difficulty breathing.\",\n  \"citations\": [\"c1\"],\n  \"record_gaps\": \"No detailed record of chest pain episodes or cardiac symptoms found.\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "The new pills make my chest feel a bit tight after meals.",
+    "expected_tool": "search_patient_record",
+    "expected_params": {
+      "query": [
+        "chest"
+      ]
+    },
+    "difficulty": "medium",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": "search_patient_record",
+    "actual_params": {
+      "query": "chest tightness after meals"
+    },
+    "response": "{\n  \"severity\": \"S3\",\n  \"confidence\": \"moderate\",\n  \"message\": \"Your chest feeling tight after meals could be related to the new pills, possibly as a side effect or an allergic reaction different from your known penicillin allergy. It might also be linked to digestive issues such as acid reflux, which can cause chest tightness after eating. Since this is a new symptom and you have a known allergy to penicillin (though not necessarily related), it would be a good idea to see your doctor within the next few days to get a thorough evaluation.\",\n  \"differential\": [\n    {\n      \"possibility\": \"Medication side effect\",\n      \"supports\": \"Timing of chest tightness after starting new pills\",\n      \"against\": \"No clear record of specific new medication side effects linking to chest tightness\"\n    },\n    {\n      \"possibility\": \"Acid reflux or digestive issue\",\n      \"supports\": \"Chest tightness occurs after meals, a common time for acid reflux symptoms\",\n      \"against\": \"Symptom described specifically as chest tight, not classic heartburn sensation\"\n    },\n    {\n      \"possibility\": \"Allergic reaction to new medication\",\n      \"supports\": \"Known allergy to penicillin suggests you might be sensitive to some medications\",\n      \"against\": \"No swelling or hives reported, and penicillin allergy does not confirm allergy to new pills\"\n    }\n  ],\n  \"questions\": [\n    \"When did you start taking the new pills and how soon after meals does the tightness occur?\",\n    \"Is the tightness in your chest mild, moderate, or severe, and does anything make it better or worse?\",\n    \"Do you have any other symptoms like difficulty breathing, swelling, or rash?\"\n  ],\n  \"safety_net\": \"If your chest tightness worsens, becomes severe, or you develop difficulty breathing, swelling, rash, or any feeling of throat tightness, seek urgent care immediately.\",\n  \"citations\": [\"c1\"],\n  \"record_gaps\": \"No details about the new pills (name, dose, type), no prior episodes of chest tightness, no detailed allergy history beyond penicillin.\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "Here are my latest blood results (blood_test_2026.pdf), can you keep them with my file?",
+    "expected_tool": "add_patient_document",
+    "expected_params": {
+      "document": [
+        "blood_test_2026.pdf"
+      ]
+    },
+    "difficulty": "medium",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": "add_patient_document",
+    "actual_params": {
+      "document": "blood_test_2026.pdf"
+    },
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"Your latest blood test results have been saved to your file. If you have any specific questions about them or need help interpreting any values, please let me know.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [\"c1\"],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "Did I ever have a reaction like this before? My throat itches.",
+    "expected_tool": "search_patient_record",
+    "expected_params": null,
+    "difficulty": "medium",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": "search_patient_record",
+    "actual_params": {
+      "query": "throat itch reaction"
+    },
+    "response": "{\n  \"severity\": \"S4\",\n  \"confidence\": \"low\",\n  \"message\": \"You have a new feeling of an itchy throat. This can sometimes be an early sign of an allergy, but your record only shows a penicillin allergy, which might not be related. You do not mention other severe symptoms like swelling or difficulty breathing, so this is not an emergency, but you should watch closely.\",\n  \"differential\": [\n    {\n      \"possibility\": \"Allergic reaction\",\n      \"supports\": \"You have a known allergy to penicillin and now report throat itch, which can be an allergy sign\",\n      \"against\": \"No mention of other allergy symptoms like swelling, rash, or breathing trouble\"\n    },\n    {\n      \"possibility\": \"Irritation or dry throat\",\n      \"supports\": \"Itchy throat can be caused by mild irritants, dry air, or minor infection\",\n      \"against\": \"You specifically asked about reaction history, so allergy is more concerning given penicillin allergy\"\n    }\n  ],\n  \"questions\": [\n    \"When did the itchy throat start and how long does it last?\",\n    \"Do you have any other symptoms like difficulty breathing, swelling, rash, or fever?\",\n    \"Have you taken any new medications, foods, or been exposed to anything different recently?\"\n  ],\n  \"safety_net\": \"Seek urgent care if you develop swelling of lips, tongue or throat, difficulty breathing, widespread rash, or worsening symptoms.\",\n  \"citations\": [\"c1\"],\n  \"record_gaps\": \"No record of past itchy throat or similar allergic symptoms found.\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "What does hypertension mean?",
+    "expected_tool": null,
+    "expected_params": null,
+    "difficulty": "medium",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": null,
+    "actual_params": null,
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"Hypertension means high blood pressure. It's when the force of your blood pushing against the walls of your blood vessels is consistently too high. This can increase the risk of heart problems and stroke over time. If you want, I can check your record for any details about your blood pressure or related health information.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "I attached my discharge letter, letter.pdf. Store it, then tell me whether it changes which drugs I should avoid.",
+    "expected_tool": "add_patient_document",
+    "expected_params": {
+      "document": [
+        "letter.pdf"
+      ]
+    },
+    "difficulty": "hard",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": "add_patient_document",
+    "actual_params": {
+      "document": "letter.pdf"
+    },
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"Your discharge letter has been added to your record. It does not change the drugs you should avoid based on what the record shows. You have a known allergy to penicillin, and this remains the medication to avoid.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [\"c1\"],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "I took aspirin and now my lips are swelling. What am I on already?",
+    "expected_tool": "search_patient_record",
+    "expected_params": {
+      "query": [
+        "allerg"
+      ]
+    },
+    "difficulty": "hard",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": "search_patient_record",
+    "actual_params": {
+      "query": "aspirin allergy or reaction lips swelling"
+    },
+    "response": "{\n  \"severity\": \"S1\",\n  \"confidence\": \"high\",\n  \"message\": \"Your swollen lips after taking aspirin could be a sign of a serious allergic reaction called anaphylaxis, which needs emergency care. Call emergency services or go to the nearest emergency department immediately. Your record shows an allergy to penicillin, but not to aspirin, so this reaction could be new and serious.\",\n  \"differential\": [\n    {\n      \"possibility\": \"Anaphylaxis (severe allergic reaction)\",\n      \"supports\": \"Swelling of lips after taking aspirin is a classic sign\",\n      \"against\": \"\"\n    },\n    {\n      \"possibility\": \"Mild allergic reaction or angioedema\",\n      \"supports\": \"Lip swelling can sometimes be a less severe allergic reaction\",\n      \"against\": \"Given the medication is aspirin and swelling could progress, this should be treated as potentially severe\"\n    }\n  ],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [\"c1\"],\n  \"record_gaps\": \"No mention of aspirin allergy or previous aspirin reactions in the record.\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "upload file requested: report.pdf",
+    "expected_tool": "add_patient_document",
+    "expected_params": null,
+    "difficulty": "hard",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": "add_patient_document",
+    "actual_params": {
+      "document": "report.pdf"
+    },
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"I did not find a PDF file named 'report.pdf' attached to your records. Please re-upload the file if you want me to review it.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "Thanks, that is all!",
+    "expected_tool": null,
+    "expected_params": null,
+    "difficulty": "edge_case",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": null,
+    "actual_params": null,
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"You're welcome! If you have any more questions or need assistance in the future, feel free to reach out.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "Tell me a joke.",
+    "expected_tool": null,
+    "expected_params": null,
+    "difficulty": "edge_case",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": null,
+    "actual_params": null,
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"I can't provide jokes, but I am here to help with your health questions or concerns. Is there anything medical you'd like to ask about?\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "What medications is my sister taking?",
+    "expected_tool": null,
+    "expected_params": null,
+    "difficulty": "edge_case",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": null,
+    "actual_params": null,
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"I can't access information about your sister or anyone else. I can only provide information and help based on your own medical record.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "How do I book an appointment with my GP?",
+    "expected_tool": null,
+    "expected_params": null,
+    "difficulty": "edge_case",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": null,
+    "actual_params": null,
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"To book an appointment with your GP, you typically need to contact your GP practice directly. This can usually be done by phone, online via their website or patient portal, or sometimes by a mobile app if your practice offers one. If you want, I can check your record to see if there are any specific instructions or links for booking appointments with your GP.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
+  }
+]

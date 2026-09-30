@@ -465,6 +465,41 @@ Each object in `results.json` holds the question as written in `questions.jsonl`
 
 The top level also records `agent_model`, `judge_model` and `recursion_limit`.
 
+### Tool-calling eval
+
+A separate, smaller check of one thing: does the model pick the right tool, with the right arguments? The agent has two tools, `search_patient_record` and `add_patient_document`. The questions above judge the answer; this judges the routing, so a wrong tool choice shows up on its own instead of being buried in an answer score.
+
+[`dataset/eval/tool_cases.py`](medas-api/dataset/eval/tool_cases.py) holds 14 cases, each a message, the tool it should trigger (or none), the keywords that tool's arguments should contain, and any PDFs sent with it:
+
+| Difficulty  | Cases | What it probes                                                                                                                                             |
+| ----------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `easy`      | 3     | A clear question about the record, or an explicit upload                                                                                                   |
+| `medium`    | 4     | Indirect phrasing (a symptom, casual "keep these with my file"), and a general question that needs no tool                                                 |
+| `hard`      | 3     | An upload plus a follow-up question, a reaction that needs the allergy list, and an upload naming a file that was never attached (the tool must refuse it) |
+| `edge_case` | 4     | Nothing to look up: thanks, a joke, someone else's medications, how to book a GP                                                                           |
+
+[`dataset/eval/run_tool_eval.py`](medas-api/dataset/eval/run_tool_eval.py) runs each case through the same compiled agent as `/ask` one after another and reads the tool calls from the message history. The tools' backends are stubbed, so it needs no database, index or embeddings, only `OPENROUTER_API_KEY` in `medas-api/.env`. A case scores on two checks:
+
+- **Tool:** the first tool the model called is the expected one, or it called none when none was expected.
+- **Params:** every expected keyword appears, case-insensitively, in that tool's arguments. Search queries are worded differently each run, so keywords stand in for an exact match. A case with no expected params passes on the tool check alone.
+
+Upload cases are phrased `upload file requested: <file name>`, as `/documents` sends them. The model only knows an attachment's name from the message, so a message that omits it makes the model invent one.
+
+```bash
+uv run python -m dataset.eval.run_tool_eval
+```
+
+It is billable, one agent run per case (14). It prints a score per difficulty and writes each case's expected and actual tool and arguments, and the agent's reply, to `dataset/eval/tool_results.json`. That file is regenerated on every run. A case that errors is recorded with its error and scored as failed, and the rest still run.
+
+```
+  easy: tool 3/3, params 3/3
+  medium: tool 4/4, params 4/4
+  hard: tool 3/3, params 3/3
+  edge_case: tool 4/4, params 4/4
+```
+
+To add a case, append `case(message, difficulty, tool, params, attachments)` to `test_cases`.
+
 ### Latest results
 
 Run 2026-09-28, `openai/gpt-4o-mini` judged by `openai/gpt-4o`, after D05 was removed from the dataset and Q05 reworded to name no document: **30 of 32 pass (94%), mean 9.47/10, 1 critical failure.** The previous run, with D05 still indexed, passed 28 with a mean of 9.16 and the same critical failure. Every reply was valid JSON, no answer asserted a forbidden statement, the attempt to reach another patient's record was refused, and none of the rejected documents surfaced in an answer.
