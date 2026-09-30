@@ -6,6 +6,7 @@ import pytest
 
 from rag_pipeline import pdf
 from rag_pipeline.pdf import Rejected, aindex_pdfs, load_pdf
+from rag_pipeline.redact import mask_pii
 
 DOCUMENTS = Path(__file__).parent.parent / "dataset" / "documents"
 
@@ -103,3 +104,25 @@ async def test_index_skips_refused_files_and_embeds_a_copy_once(monkeypatch):
     written = await aindex_pdfs([DOCUMENTS / n for n in names], RECORD)
 
     assert written == len(added) == len(_chunks(names[0]))
+
+
+def test_contact_details_and_other_people_are_masked_but_the_patient_is_not():
+    loaded = load_pdf(DOCUMENTS / "D02_letter_ent_clinic_2026-09-10.pdf", RECORD)
+
+    assert "Smacchia" in loaded.text
+    assert "07/06/1980" in loaded.text
+    assert "<PERSON>" in loaded.text
+    assert "<PERSON>" in loaded.chunks[0].page_content
+
+
+def test_mask_pii_replaces_identifiers_and_keeps_dates_and_the_patient():
+    masked = mask_pii(
+        "Mr Smacchia, seen by Dr Patel on 12/03/2026. Call 020 7946 0958 or "
+        "a.patel@nhs.net. NHS number 943 476 5919.",
+        RECORD,
+    )
+
+    assert "Smacchia" in masked
+    assert "12/03/2026" in masked
+    for leaked in ("Patel", "020 7946", "a.patel@nhs.net", "943 476"):
+        assert leaked not in masked

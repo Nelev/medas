@@ -11,7 +11,8 @@ from langchain_community.document_loaders import PDFPlumberLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from rag_pipeline.chunks import patient_prefix
+from rag_pipeline.chunks import patient_prefix, surname
+from rag_pipeline.redact import mask_pii
 from rag_pipeline.vector_store import get_vector_store
 
 __all__ = ["LoadedPdf", "Rejected", "aindex_pdfs", "doc_prefix", "load_pdf"]
@@ -34,8 +35,8 @@ class Rejected(Exception):
 
 class LoadedPdf(NamedTuple):
     chunks: list[Document]
-    # The file's own text, without the identity line each chunk carries: what
-    # a reader of the document, the upload's model check among them, sees.
+    # The file's own text, PII masked, without the identity line each chunk
+    # carries: what the upload's model check sees.
     text: str
 
 
@@ -89,8 +90,14 @@ def load_pdf(path: Path, record: dict[str, Any]) -> LoadedPdf:
     dob = record["dob"]
     if dob not in text and f"{date.fromisoformat(dob):%d/%m/%Y}" not in text:
         raise Rejected("not this patient")
-    if record["name"].split()[-1].casefold() not in text.casefold():
+    if surname(record) not in text.casefold():
         raise Rejected("not this patient")
+
+    # Masked only now: the checks above need the raw text, which never leaves
+    # this function. Before splitting, so an entity is not cut by a boundary.
+    for page in pages:
+        page.page_content = mask_pii(page.page_content, record)
+    text = "\n".join(page.page_content for page in pages)
 
     patient_id = record["id"]
     prefix = doc_prefix(path)
