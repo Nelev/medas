@@ -1,6 +1,7 @@
-import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs"
+import { Show, SignInButton, SignUpButton } from "@clerk/nextjs"
 import { Stethoscope } from "lucide-react"
 
+import { AccountMenu } from "@/components/chat/account-menu"
 import { Button } from "@/components/ui/button"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 
@@ -41,7 +42,7 @@ export function ChatHeader() {
         </div>
       </Show>
       <Show when="signed-in">
-        <UserButton />
+        <AccountMenu />
       </Show>
     </header>
   )
