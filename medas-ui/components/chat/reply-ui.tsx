@@ -11,16 +11,28 @@ import { shadcnComponents } from "@json-render/shadcn"
 import { shadcnComponentDefinitions as defs } from "@json-render/shadcn/catalog"
 import { useMemo } from "react"
 
-// The types the assistant prompt lists, and no others: a spec naming anything
-// else fails validation below. Keep in step with the table in
+// The display components of json-render's shadcn set, and no others: a spec
+// naming anything else fails validation below. Left out on purpose: Image,
+// Avatar and Link, which load or follow a URL the model chose, from a record
+// that can carry injected text; the form, button, dialog and menu components,
+// which need actions and state this read-only reply does not have; and Tabs,
+// which needs bound state; and Carousel, which swipes inside a chat bubble and
+// needs a browser to draw. Keep in step with the table in
 // medas-api/langchain_agent/assistant_general_prompt.py.
 const catalog = defineCatalog(schema, {
   components: {
     Card: defs.Card,
     Stack: defs.Stack,
-    Text: defs.Text,
+    Grid: defs.Grid,
+    Separator: defs.Separator,
+    Collapsible: defs.Collapsible,
+    Accordion: defs.Accordion,
     Table: defs.Table,
+    Heading: defs.Heading,
+    Text: defs.Text,
+    Badge: defs.Badge,
     Alert: defs.Alert,
+    Progress: defs.Progress,
   },
   actions: {},
 })
@@ -29,9 +41,16 @@ const { registry } = defineRegistry(catalog, {
   components: {
     Card: shadcnComponents.Card,
     Stack: shadcnComponents.Stack,
-    Text: shadcnComponents.Text,
+    Grid: shadcnComponents.Grid,
+    Separator: shadcnComponents.Separator,
+    Collapsible: shadcnComponents.Collapsible,
+    Accordion: shadcnComponents.Accordion,
     Table: shadcnComponents.Table,
+    Heading: shadcnComponents.Heading,
+    Text: shadcnComponents.Text,
+    Badge: shadcnComponents.Badge,
     Alert: shadcnComponents.Alert,
+    Progress: shadcnComponents.Progress,
   },
 })
 
