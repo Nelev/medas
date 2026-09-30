@@ -28,6 +28,10 @@ async def _add_document(attachment, record_id):
     return 3
 
 
+def _export_conversation(turns):
+    return "conversation-eval.pdf"
+
+
 def _params_correct(case: dict, tool_calls: list[dict]) -> bool:
     """Every wanted keyword appears in the expected tool's arguments."""
     for argument, wanted in (case["expected_params"] or {}).items():
@@ -83,10 +87,9 @@ async def _run_case(i: int, case: dict, agent) -> dict:
 
 
 async def main() -> None:
-    agent_module.search_record, agent_module.add_document = (
-        _search_record,
-        _add_document,
-    )
+    agent_module.search_record = _search_record
+    agent_module.add_document = _add_document
+    agent_module.export_conversation = _export_conversation
     agent = build_agent()
 
     results = [await _run_case(i, case, agent) for i, case in enumerate(test_cases)]

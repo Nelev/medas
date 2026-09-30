@@ -467,16 +467,16 @@ The top level also records `agent_model`, `judge_model` and `recursion_limit`.
 
 ### Tool-calling eval
 
-A separate, smaller check of one thing: does the model pick the right tool, with the right arguments? The agent has two tools, `search_patient_record` and `add_patient_document`. The questions above judge the answer; this judges the routing, so a wrong tool choice shows up on its own instead of being buried in an answer score.
+A separate, smaller check of one thing: does the model pick the right tool, with the right arguments? The agent has three tools, `search_patient_record`, `add_patient_document` and `export_conversation_pdf`. The questions above judge the answer; this judges the routing, so a wrong tool choice shows up on its own instead of being buried in an answer score.
 
-[`dataset/eval/tool_cases.py`](medas-api/dataset/eval/tool_cases.py) holds 14 cases, each a message, the tool it should trigger (or none), the keywords that tool's arguments should contain, and any PDFs sent with it:
+[`dataset/eval/tool_cases.py`](medas-api/dataset/eval/tool_cases.py) holds 17 cases, each a message, the tool it should trigger (or none), the keywords that tool's arguments should contain, and any PDFs sent with it:
 
 | Difficulty  | Cases | What it probes                                                                                                                                             |
 | ----------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `easy`      | 3     | A clear question about the record, or an explicit upload                                                                                                   |
-| `medium`    | 4     | Indirect phrasing (a symptom, casual "keep these with my file"), and a general question that needs no tool                                                 |
+| `easy`      | 4     | A clear question about the record, an explicit upload, or an explicit PDF export                                                                           |
+| `medium`    | 5     | Indirect phrasing (a symptom, casual "keep these with my file", "a PDF copy of our chat"), and a general question that needs no tool                       |
 | `hard`      | 3     | An upload plus a follow-up question, a reaction that needs the allergy list, and an upload naming a file that was never attached (the tool must refuse it) |
-| `edge_case` | 4     | Nothing to look up: thanks, a joke, someone else's medications, how to book a GP                                                                           |
+| `edge_case` | 5     | Nothing to look up: thanks, a joke, someone else's medications, how to book a GP, emailing the conversation                                                |
 
 [`dataset/eval/run_tool_eval.py`](medas-api/dataset/eval/run_tool_eval.py) runs each case through the same compiled agent as `/ask` one after another and reads the tool calls from the message history. The tools' backends are stubbed, so it needs no database, index or embeddings, only `OPENROUTER_API_KEY` in `medas-api/.env`. A case scores on two checks:
 
@@ -489,7 +489,7 @@ Upload cases are phrased `upload file requested: <file name>`, as `/documents` s
 uv run python -m dataset.eval.run_tool_eval
 ```
 
-It is billable, one agent run per case (14). It prints a score per difficulty and writes each case's expected and actual tool and arguments, and the agent's reply, to `dataset/eval/tool_results.json`. That file is regenerated on every run. A case that errors is recorded with its error and scored as failed, and the rest still run.
+It is billable, one agent run per case (17). It prints a score per difficulty and writes each case's expected and actual tool and arguments, and the agent's reply, to `dataset/eval/tool_results.json`. That file is regenerated on every run. A case that errors is recorded with its error and scored as failed, and the rest still run.
 
 ```
   easy: tool 3/3, params 3/3

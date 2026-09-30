@@ -11,6 +11,7 @@ from langchain_agent.documents import Attachment
 RECORD_ID = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 SEARCH = "search_patient_record"
 ADD = "add_patient_document"
+EXPORT = "export_conversation_pdf"
 LETTER = Attachment("letter.pdf", b"%PDF-1.4")
 LAB = Attachment("blood_test_2026.pdf", b"%PDF-1.4")
 
@@ -41,6 +42,7 @@ test_cases = [
         {"document": ["letter.pdf"]},
         [LETTER],
     ),
+    case("export this conversation as pdf", "easy", EXPORT),
     # -- Medium: indirect phrasing, misleading keywords --
     case(
         "The new pills make my chest feel a bit tight after meals.",
@@ -62,6 +64,7 @@ test_cases = [
         SEARCH,
     ),
     case("What does hypertension mean?", "medium"),
+    case("Can I get a PDF copy of our chat to show my GP?", "medium", EXPORT),
     # -- Hard: blended intents, a missing file --
     case(
         "I attached my discharge letter, letter.pdf. Store it, then tell me "
@@ -85,4 +88,6 @@ test_cases = [
     case("Tell me a joke.", "edge_case"),
     case("What medications is my sister taking?", "edge_case"),
     case("How do I book an appointment with my GP?", "edge_case"),
+    # Close to an export, but a different file and a different channel.
+    case("Can you email this conversation to my GP?", "edge_case"),
 ]
