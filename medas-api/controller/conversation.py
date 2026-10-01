@@ -14,8 +14,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from langchain_agent.agent import answer as ask_agent
 from langchain_agent.patient import record_id
 from model import MessageRole, append_message, create_conversation, list_messages
-from schema import Attachment, ConversationNotFound, NewMessage, UserNotFound
+from schema import (
+    AgentUnavailable,
+    Attachment,
+    ConversationNotFound,
+    NewMessage,
+    UserNotFound,
+)
 from utils import messages_as_turns, parse_agent_reply
+
+UNAVAILABLE_REPLY = "Sorry, I couldn't answer that just now. Please try again."
 
 __all__ = [
     "answer_and_store",
@@ -144,9 +152,22 @@ async def answer_and_store(
     """
     # The record searched is the signed-in user's, by the pat_{users.id}
     # convention langchain_agent/patient.py owns.
-    reply = await ask_agent(
-        turns, record_id=record_id(user_id), attachments=attachments
-    )
+    try:
+        reply = await ask_agent(
+            turns, record_id=record_id(user_id), attachments=attachments
+        )
+    except AgentUnavailable:
+        # The question is already committed, so leave an answer beside it
+        # rather than a thread that ends on an unanswered turn.
+        await append_message(
+            session,
+            conversation_id,
+            MessageRole.ASSISTANT,
+            UNAVAILABLE_REPLY,
+            user_id=user_id,
+        )
+        await session.commit()
+        raise
     reply_text, extra = parse_agent_reply(reply)
 
     return await append_message(

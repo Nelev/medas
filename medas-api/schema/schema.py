@@ -6,6 +6,7 @@ from typing import Any, Literal, TypedDict
 from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
+    "AgentUnavailable",
     "Attachment",
     "Chunk",
     "ConversationNotFound",
@@ -62,6 +63,10 @@ class RecordNotFound(NotFound):
     """The signed-in user has no medical record to add a document to."""
 
     detail = "Record not found"
+
+
+class AgentUnavailable(Exception):
+    """The model could not be reached or did not answer."""
 
 
 class Rejected(Exception):

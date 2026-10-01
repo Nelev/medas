@@ -20,13 +20,14 @@ from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.tools import ToolRuntime, tool
 from langchain_openai import ChatOpenAI
+from openai import OpenAIError
 from starlette.concurrency import run_in_threadpool
 
 from langchain_agent.assistant_general_prompt import ASSISTANT_SYSTEM_PROMPT
 from langchain_agent.documents import add_document
 from langchain_agent.export import export_conversation
 from rag_pipeline.search import search_record
-from schema import Attachment, RecordContext, Rejected
+from schema import AgentUnavailable, Attachment, RecordContext, Rejected
 from utils import OPENROUTER_BASE_URL
 
 load_dotenv()
@@ -126,10 +127,13 @@ async def answer(
     `attachments` are the PDFs sent with the last turn, the only files the
     document tools can verify and store.
     """
-    result = await build_agent().ainvoke(
-        {"messages": messages},
-        context=RecordContext(record_id, tuple(attachments)),
-    )
+    try:
+        result = await build_agent().ainvoke(
+            {"messages": messages},
+            context=RecordContext(record_id, tuple(attachments)),
+        )
+    except OpenAIError as exc:
+        raise AgentUnavailable from exc
 
     return result["messages"][-1].content
 
