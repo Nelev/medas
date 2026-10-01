@@ -11,23 +11,17 @@ import uuid
 from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from controller.conversation import NotFound, answer_and_store, write_user_turn
-from langchain_agent.documents import Attachment
+from controller.conversation import answer_and_store, write_user_turn
 from langchain_agent.patient import record_id
 from model import MessageRole
 from rag_pipeline.record import find_record
+from schema import Attachment, RecordNotFound
 from utils import messages_as_turns
 
-__all__ = ["RecordNotFound", "index_upload"]
+__all__ = ["index_upload"]
 
 # The user's turn an upload writes, before the agent is asked.
 UPLOAD_REQUESTED = "upload file requested"
-
-
-class RecordNotFound(NotFound):
-    """The signed-in user has no medical record to add a document to."""
-
-    detail = "Record not found"
 
 
 async def index_upload(

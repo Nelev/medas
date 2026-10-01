@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from rag_pipeline import verify
-from rag_pipeline.pdf import Rejected
 from rag_pipeline.verify import averify
+from schema import Rejected
 
 RECORD = {"name": "Mattia Smacchia", "dob": "1980-06-07", "sex": "male"}
 

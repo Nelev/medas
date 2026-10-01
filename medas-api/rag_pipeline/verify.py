@@ -14,7 +14,7 @@ from typing import Any
 from langchain_openai import ChatOpenAI
 
 from rag_pipeline.chunks import patient_prefix
-from rag_pipeline.pdf import Rejected
+from schema import Rejected
 from utils import OPENROUTER_BASE_URL
 
 __all__ = ["VERIFY_MODEL", "averify"]

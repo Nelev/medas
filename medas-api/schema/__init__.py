@@ -5,6 +5,26 @@ Deliberately separate from ``model``: that package is the ORM layer whose
 and table definitions change for different reasons, so they stay apart.
 """
 
-from schema.schema import NewMessage
+from schema.schema import (
+    Attachment,
+    Chunk,
+    ConversationNotFound,
+    NewMessage,
+    NotFound,
+    RecordContext,
+    RecordNotFound,
+    Rejected,
+    UserNotFound,
+)
 
-__all__ = ["NewMessage"]
+__all__ = [
+    "Attachment",
+    "Chunk",
+    "ConversationNotFound",
+    "NewMessage",
+    "NotFound",
+    "RecordContext",
+    "RecordNotFound",
+    "Rejected",
+    "UserNotFound",
+]

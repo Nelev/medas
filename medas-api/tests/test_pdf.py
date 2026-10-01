@@ -5,8 +5,9 @@ from pathlib import Path
 import pytest
 
 from rag_pipeline import pdf
-from rag_pipeline.pdf import Rejected, aindex_pdfs, load_pdf
+from rag_pipeline.pdf import aindex_pdfs, load_pdf
 from rag_pipeline.redact import mask_pii
+from schema import Rejected
 
 DOCUMENTS = Path(__file__).parent.parent / "dataset" / "documents"
 

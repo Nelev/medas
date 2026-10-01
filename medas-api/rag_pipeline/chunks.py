@@ -1,16 +1,9 @@
 """Flatten a patient record into standalone chunks ready for embedding."""
 
 from collections.abc import Iterator
-from typing import Any, TypedDict
+from typing import Any
 
-
-class Chunk(TypedDict):
-    """One embeddable unit: the text, plus what you need to filter and cite."""
-
-    chunk_id: str
-    kind: str
-    text: str
-    metadata: dict[str, Any]
+from schema import Chunk
 
 
 def patient_prefix(doc: dict[str, Any]) -> str:

@@ -13,7 +13,8 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 
 import langchain_agent.export as export
-from langchain_agent.agent import RecordContext, export_conversation_pdf
+from langchain_agent.agent import export_conversation_pdf
+from schema import RecordContext
 
 RECORD_ID = "pat_1"
 

@@ -10,11 +10,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth import CurrentUser, GreetingName, get_auth_settings
-from controller import NotFound, ask_question, get_conversation, index_upload
+from controller import ask_question, get_conversation, index_upload
 from database.database import dispose_engine, get_session, init_engine
 from model import greeting_text, list_conversations
 from rag_pipeline.vector_store import init_vector_store
-from schema import NewMessage
+from schema import NewMessage, NotFound
 
 # Copies .env into os.environ for what reads it directly rather than through
 # a settings class -- the agent's OPENROUTER_API_KEY among them.

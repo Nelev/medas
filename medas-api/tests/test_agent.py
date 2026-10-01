@@ -12,13 +12,11 @@ import pytest
 
 import langchain_agent.agent as agent
 from langchain_agent.agent import (
-    RecordContext,
     add_patient_document,
     answer,
     search_patient_record,
 )
-from langchain_agent.documents import Attachment
-from rag_pipeline.pdf import Rejected
+from schema import Attachment, RecordContext, Rejected
 
 RECORD_ID = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 LETTER = Attachment("letter.pdf", b"%PDF-1.4")

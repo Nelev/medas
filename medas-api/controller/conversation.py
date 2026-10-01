@@ -12,40 +12,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from langchain_agent.agent import answer as ask_agent
-from langchain_agent.documents import Attachment
 from langchain_agent.patient import record_id
 from model import MessageRole, append_message, create_conversation, list_messages
-from schema import NewMessage
+from schema import Attachment, ConversationNotFound, NewMessage, UserNotFound
 from utils import messages_as_turns, parse_agent_reply
 
 __all__ = [
-    "ConversationNotFound",
-    "NotFound",
-    "UserNotFound",
     "answer_and_store",
     "ask_question",
     "get_conversation",
     "write_user_turn",
 ]
-
-
-class NotFound(Exception):
-    """Something the caller asked for is not there; `detail` says what."""
-
-    detail = "Not found"
-
-
-class ConversationNotFound(NotFound):
-    """Unknown, soft-deleted or someone else's: one answer for all three, so
-    an id cannot be probed for."""
-
-    detail = "Conversation not found"
-
-
-class UserNotFound(NotFound):
-    """The signed-in user's row is gone: deleted since current_user found it."""
-
-    detail = "User not found"
 
 
 async def ask_question(

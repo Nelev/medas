@@ -14,7 +14,6 @@ import asyncio
 import json
 import os
 from collections.abc import Sequence
-from dataclasses import dataclass
 from functools import lru_cache
 
 from dotenv import load_dotenv
@@ -24,25 +23,15 @@ from langchain_openai import ChatOpenAI
 from starlette.concurrency import run_in_threadpool
 
 from langchain_agent.assistant_general_prompt import ASSISTANT_SYSTEM_PROMPT
-from langchain_agent.documents import Attachment, add_document
+from langchain_agent.documents import add_document
 from langchain_agent.export import export_conversation
-from rag_pipeline.pdf import Rejected
 from rag_pipeline.search import search_record
+from schema import Attachment, RecordContext, Rejected
 from utils import OPENROUTER_BASE_URL
 
 load_dotenv()
 
 MODEL_NAME = "openai/gpt-4.1-mini"
-
-
-@dataclass(frozen=True)
-class RecordContext:
-    """Per-run data for the tools, passed at invoke time, never by the model."""
-
-    record_id: str
-    # The PDFs sent with this question, the only ones the document tools can
-    # reach: the model names one, it cannot supply one.
-    attachments: tuple[Attachment, ...] = ()
 
 
 @tool

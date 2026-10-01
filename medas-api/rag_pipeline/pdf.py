@@ -14,8 +14,9 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from rag_pipeline.chunks import patient_prefix, surname
 from rag_pipeline.redact import mask_pii
 from rag_pipeline.vector_store import get_vector_store
+from schema import Rejected
 
-__all__ = ["LoadedPdf", "Rejected", "aindex_pdfs", "doc_prefix", "load_pdf"]
+__all__ = ["LoadedPdf", "aindex_pdfs", "doc_prefix", "load_pdf"]
 
 # Text smaller than this, or white, is invisible to a reader but still in the
 # text layer: the usual place to hide an instruction to the model.
@@ -27,10 +28,6 @@ _WHITE = {(1,), (1, 1, 1), (0, 0, 0, 0)}
 _SPLITTER = RecursiveCharacterTextSplitter(
     chunk_size=1000, chunk_overlap=100, add_start_index=True
 )
-
-
-class Rejected(Exception):
-    """The document is not indexed; the message says why."""
 
 
 class LoadedPdf(NamedTuple):
