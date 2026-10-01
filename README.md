@@ -159,6 +159,8 @@ Both suites are unit-only by design — no database, no API, no model, no browse
 
 **Agent failures.** If the model cannot be reached or does not answer, `/ask` and `/documents` return `503`. The user's turn is already stored, so the API stores a short apology as the assistant's turn beside it; it shows when the conversation is next loaded.
 
+**Message guardrails.** Before the agent runs, `/ask` refuses with a `422` a message over 2,000 characters (`MAX_MESSAGE_LENGTH`, about 400 words; `NewMessage` still caps the body at 4,000) or one containing a known prompt-injection phrase such as "ignore previous instructions" or "reveal your system prompt". Both checks are deterministic, in `medas-api/guardrails/guardrails.py`, and nothing is stored or sent to the model. The phrase check is a case-insensitive substring match against a short list, so it catches the obvious and nothing else. `/documents` does not run it.
+
 **Rate limits.** `/ask` and `/documents`, which call the model, allow 10 requests a minute and 200 a day; the reads (`GET /` and `GET /conversations/{id}`) allow 60 a minute and 2000 a day; `/health/db` allows 10 and 200. Counted per route and per user (the session token's subject; `/health/db` needs no sign-in, so it is counted per remote address). Over the limit is a `429`. The counters are in process memory, so they reset on restart and are not shared across workers.
 
 Two things that trip people up: who is asking, and the name the greeting addresses, come from the session token alone, never a request field (a `user` query parameter is ignored); and the message goes in the body **flat** — a `{message: {...}}` wrapper is a 422.
