@@ -163,10 +163,6 @@ Both suites are unit-only by design — no database, no API, no model, no browse
 
 **Rate limits.** `/ask` and `/documents`, which call the model, allow 10 requests a minute and 200 a day; the reads (`GET /` and `GET /conversations/{id}`) allow 60 a minute and 2000 a day; `/health/db` allows 10 and 200. Counted per route and per user (the session token's subject; `/health/db` needs no sign-in, so it is counted per remote address). Over the limit is a `429`. The counters are in process memory, so they reset on restart and are not shared across workers.
 
-Two things that trip people up: who is asking, and the name the greeting addresses, come from the session token alone, never a request field (a `user` query parameter is ignored); and the message goes in the body **flat** — a `{message: {...}}` wrapper is a 422.
-
-`message_id` and `timestamp` are minted server-side and ignored if sent. An assistant turn also carries `severity` (`S1`–`S5`) and `confidence` when the model returned them, stored with the message rather than returned alone: which triage code was given, and when, is what an audit asks about later. An unknown or soft-deleted conversation is a `404`, never an implicit create — that would resurrect deleted threads and let a caller choose its own primary key.
-
 ### How an answer is produced
 
 The route does not run a tool loop of its own. It assembles the conversation, hands it to a LangChain agent, and stores what comes back.
@@ -714,3 +710,19 @@ Then the smaller ones:
 - **Rate limits are per process.** The counters live in memory (`ratelimit.py`), so they reset on restart and multiply with the number of workers; a shared store (`storage_uri`) would fix both.
 - **No idempotency.** A double-submitted first message creates two conversations.
 - **A submit before hydration is lost.** The composer uses an `onSubmit` handler rather than a form action, so a submission made before React hydrates navigates to `/?message=…` and the message is dropped. React queues submissions for a `<form action={…}>`; a plain handler cannot.
+
+### Personal notes and future improvements
+During the sprint2, i had the chance to go deeper on RAG, evaluations, agents, Python, generative UI, memory and API security.
+The app i delivered tries to cover as much topics i encountered, taking in account the time factor.
+Data usability/persistence felt much more central then in sprint1 by design, but can be improved.
+
+
+Some of possible next improvements:
+
+- export now doesnt download the file, it saves it on the exports project folder
+- better messages handling ( Queue or something similar)
+- real feedback from real users
+- notifications system for new appoitments / reminder. The verify document scope is already in place.
+- more effective masking for real user documents or informations. Presidio now covers the document scope audit but not the conversations export.
+- performance, costs and latency monitor and logging.
+  
