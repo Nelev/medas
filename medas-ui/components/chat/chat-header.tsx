@@ -1,7 +1,6 @@
 import { Show, SignInButton, SignUpButton } from "@clerk/nextjs"
-import { Stethoscope } from "lucide-react"
-
 import { AccountMenu } from "@/components/chat/account-menu"
+import { MedasMark } from "@/components/medas-mark"
 import { Button } from "@/components/ui/button"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 
@@ -12,9 +11,7 @@ export function ChatHeader() {
           it. On wider screens its own header carries the toggle. */}
       <SidebarTrigger className="md:hidden" />
 
-      <div className="bg-primary text-primary-foreground shadow-primary/25 flex size-9.5 shrink-0 items-center justify-center rounded-[0.9rem] shadow-md">
-        <Stethoscope className="size-4.5" aria-hidden />
-      </div>
+      <MedasMark className="shadow-primary/25 size-9.5 shrink-0 rounded-[0.9rem] shadow-md" />
 
       <div className="min-w-0 flex-1">
         {/* The serif is the whole brand gesture: one word, set in a face no
