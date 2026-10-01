@@ -15,7 +15,8 @@ from langchain_core.messages import AIMessage
 import langchain_agent.agent as agent_module
 from dataset.eval.common import HERE, error_text
 from dataset.eval.tool_cases import RECORD_ID, test_cases
-from langchain_agent.agent import RecordContext, build_agent
+from langchain_agent.agent import build_agent
+from schema import RecordContext
 
 RECURSION_LIMIT = 12
 

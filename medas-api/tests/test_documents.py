@@ -9,8 +9,8 @@ from fastapi import UploadFile
 
 import rag_pipeline.record as records
 from controller import documents
-from controller.documents import RecordNotFound, index_upload
-from langchain_agent.documents import Attachment
+from controller.documents import index_upload
+from schema import Attachment, RecordNotFound
 
 USER_ID = uuid.uuid4()
 CONVERSATION_ID = uuid.uuid4()

@@ -6,7 +6,7 @@ tool's calls (None skips the check). attachments are the PDFs sent with the
 message.
 """
 
-from langchain_agent.documents import Attachment
+from schema import Attachment
 
 RECORD_ID = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 SEARCH = "search_patient_record"

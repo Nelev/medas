@@ -5,25 +5,17 @@ context, and lives no longer than the run.
 """
 
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 
 from starlette.concurrency import run_in_threadpool
 
-from rag_pipeline.pdf import LoadedPdf, Rejected, load_pdf
+from rag_pipeline.pdf import LoadedPdf, load_pdf
 from rag_pipeline.record import find_record
 from rag_pipeline.vector_store import get_vector_store
 from rag_pipeline.verify import averify
+from schema import Attachment, Rejected
 
-__all__ = ["Attachment", "add_document"]
-
-
-@dataclass(frozen=True)
-class Attachment:
-    """A PDF sent with the question. `name` is what the model calls it by."""
-
-    name: str
-    content: bytes
+__all__ = ["add_document"]
 
 
 def _load(attachment: Attachment, record: dict) -> LoadedPdf:

@@ -4,8 +4,9 @@ import pytest
 
 import langchain_agent.documents as documents
 import rag_pipeline.record as records
-from langchain_agent.documents import Attachment, add_document
-from rag_pipeline.pdf import LoadedPdf, Rejected
+from langchain_agent.documents import add_document
+from rag_pipeline.pdf import LoadedPdf
+from schema import Attachment, Rejected
 
 RECORD = {"id": "pat_1", "name": "Mattia", "dob": "1980-06-07"}
 LOADED = LoadedPdf(chunks=["chunk 1", "chunk 2"], text="Dear Mattia")
