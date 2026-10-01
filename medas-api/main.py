@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Request, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth import CurrentUser, GreetingName, get_auth_settings
 from controller import ask_question, get_conversation, index_upload
 from database.database import dispose_engine, get_session, init_engine
+from guardrails.guardrails import basic_injection_check, message_too_long
 from model import greeting_texts, list_conversations
 from rag_pipeline.vector_store import init_vector_store
 from ratelimit import LIMITS, READ_LIMITS, limiter
@@ -116,6 +117,13 @@ async def ask(
 
     Who is asking comes from the session token, never from the request.
     """
+    if message_too_long(message.text):
+        raise HTTPException(status_code=422, detail="Message is too long.")
+    if basic_injection_check(message.text):
+        raise HTTPException(
+            status_code=422,
+            detail="Message looks like an attempt to override the assistant.",
+        )
     conversation_id, messages = await ask_question(
         session, user_id, name, message, conversationId
     )
