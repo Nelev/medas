@@ -17,7 +17,7 @@ from controller import ask_question, get_conversation, index_upload
 from database.database import dispose_engine, get_session, init_engine
 from model import greeting_text, list_conversations
 from rag_pipeline.vector_store import init_vector_store
-from ratelimit import LIMITS, limiter
+from ratelimit import LIMITS, READ_LIMITS, limiter
 from schema import AgentUnavailable, NewMessage, NotFound
 
 # Copies .env into os.environ for what reads it directly rather than through
@@ -71,7 +71,7 @@ async def agent_unavailable(_: Request, exc: AgentUnavailable) -> JSONResponse:
 
 
 @app.get("/")
-@limiter.limit(LIMITS)
+@limiter.limit(READ_LIMITS)
 async def init_user_profile(
     request: Request, user_id: CurrentUser, session: SessionDep, name: GreetingName
 ):
@@ -111,7 +111,7 @@ async def ask(
 
 
 @app.get("/conversations/{conversation_id}")
-@limiter.limit(LIMITS)
+@limiter.limit(READ_LIMITS)
 async def read_conversation(
     request: Request,
     conversation_id: uuid.UUID,
