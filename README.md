@@ -13,10 +13,11 @@ Two packages, deployed and developed separately:
 
 Every request to medas-api is made by the Next server. The browser only ever talks to its own origin:
 
-| Step          | Who calls                              | Call                                                            |
-| ------------- | -------------------------------------- | --------------------------------------------------------------- |
-| Page load     | The Next server, in a Server Component | `GET /` → the greeting turns, not persisted                     |
-| Every message | The Next server, in a Server Action    | `POST /ask[?conversationId=…]` → stores the turn and answers it |
+| Step                     | Who calls                              | Call                                                                           |
+| ------------------------ | -------------------------------------- | ------------------------------------------------------------------------------ |
+| Page load                | The Next server, in a Server Component | `GET /` → the greeting turns, not persisted, and the user's past conversations |
+| Open a past conversation | The Next server, in a Server Action    | `GET /conversations/{id}` → its whole history                                  |
+| Every message            | The Next server, in a Server Action    | `POST /ask[?conversationId=…]` → stores the turn and answers it                |
 
 That is what keeps the API's origin out of the browser bundle, removes any need for CORS, and lets one build run in any environment.
 
@@ -28,7 +29,7 @@ One endpoint answers every message. `conversationId` is optional: without it the
 
 The greeting addresses the signed-in user by their Clerk first name, which rides in the session token as a `first_name` claim. [`greeting_name`](medas-api/auth/session.py) reads it from the verified token, so `GET /` for the preview and the `POST /ask` that starts a conversation greet with the same name, and the greeting stored is the one the patient already saw. Nothing asks Clerk for it. The claim has to be added once in the Clerk dashboard, under **Sessions → Customize session token**: `{"first_name": "{{user.first_name}}"}`. Without it, or for an account with no first name, the API greets "Hi there". A renamed account keeps the old name until its token refreshes, about a minute.
 
-Nothing is read back: the UI keeps the history it was given, so a reload starts from the greeting again.
+The UI keeps the history it was given in memory, so a reload starts from the greeting again. The sidebar lists the user's past conversations, and opening one reads its history back with `GET /conversations/{id}`.
 
 ## Prerequisites
 
@@ -107,13 +108,14 @@ yarn install
 
 ## Environment
 
-| Variable                                                | Read by                                                                       | Default                     | If it is wrong                           |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------- | ---------------------------------------- |
-| `API_BASE_URL`                                          | The Next **server** → `api/init.ts`, `api/chat.ts`                            | `http://localhost:8000`     | The page fails to render, and sends fail |
-| `OPENROUTER_API_KEY`                                    | medas-api — embeddings and the model calls                                    | none                        | Answering fails; the API still starts    |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | medas-ui — the Clerk session                                                  | none                        | Sign-in does not load                    |
-| `CLERK_SECRET_KEY`                                      | medas-api — verifying session tokens, and the email lookup on a first sign-in | none                        | The API refuses to start                 |
-| `CLERK_AUTHORIZED_PARTIES`                              | medas-api — the origins a token may be issued for, as a JSON list             | `["http://localhost:3000"]` | Every request is `401`                   |
+| Variable                                                | Read by                                                                       | Default                     | If it is wrong                            |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------- | ----------------------------------------- |
+| `API_BASE_URL`                                          | The Next **server** → `api/init.ts`, `api/chat.ts`                            | `http://localhost:8000`     | The page fails to render, and sends fail  |
+| `OPENROUTER_API_KEY`                                    | medas-api — embeddings and the model calls                                    | none                        | Answering fails; the API still starts     |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | medas-ui — the Clerk session                                                  | none                        | Sign-in does not load                     |
+| `CLERK_SECRET_KEY`                                      | medas-api — verifying session tokens, and the email lookup on a first sign-in | none                        | The API refuses to start                  |
+| `CLERK_AUTHORIZED_PARTIES`                              | medas-api — the origins a token may be issued for, as a JSON list             | `["http://localhost:3000"]` | Every request is `401`                    |
+| `CLERK_JWT_KEY`                                         | medas-api — Clerk's public key, to verify tokens without a network call       | none (optional)             | Tokens are verified through Clerk instead |
 
 The Clerk keys go in `medas-ui/.env.local`, and nobody needs to copy them by hand: `yarn dlx clerk@latest init` writes development keys there, for an unclaimed app when you are signed out of Clerk. `yarn dlx clerk@latest auth login` claims it later. The build does not need them, so CI runs without them. medas-api needs the same `CLERK_SECRET_KEY` in `medas-api/.env`; its tests use a placeholder and generate their own signing key, so its CI does not need it either.
 
@@ -168,7 +170,7 @@ Two things that trip people up: who is asking, and the name the greeting address
 The route does not run a tool loop of its own. It assembles the conversation, hands it to a LangChain agent, and stores what comes back.
 
 1. **Assembles the turns.** Every stored message becomes `{role, content}` — the wire calls the field `text`, a chat model calls it `content` — and the new question goes last. The whole thread is sent, so the model answers in the context of everything said before rather than the last message alone.
-2. **Runs the agent.** [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py) is a `create_agent` graph with two tools (a search, and one for adding a PDF the patient attaches) and [`langchain_agent/assistant_general_prompt.py`](medas-api/langchain_agent/assistant_general_prompt.py) as its system prompt. The graph decides for itself whether to search, how many times, and when it has enough to answer — which is the thing the hand-rolled loop this replaced could not do.
+2. **Runs the agent.** [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py) is a `create_agent` graph with three tools (a search, one for adding a PDF the patient attaches, and one for exporting the conversation as a PDF) and [`langchain_agent/assistant_general_prompt.py`](medas-api/langchain_agent/assistant_general_prompt.py) as its system prompt. The graph decides for itself whether to search, how many times, and when it has enough to answer — which is the thing the hand-rolled loop this replaced could not do.
 3. **Searches when it asks to.** The model cannot reach the vector store; only this process can, so a tool call is a question rather than an answer. `search_patient_record(query)` takes **only** a query: whose record is searched is fixed by the service, not chosen by the model, so a message claiming a different record id cannot become a read of somebody else's chart.
 4. **Reads the reply.** The prompt specifies one JSON object, so the route parses it for `message` — what the patient sees — and stores `severity` and `confidence` as metadata. An optional `ui` field, a [json-render](https://json-render.dev/docs/api/shadcn) spec built from the display components of the shadcn set (`Card`, `Stack`, `Grid`, `Separator`, `Collapsible`, `Accordion`, `Table`, `Heading`, `Text`, `Badge`, `Alert`, `Progress`; no images, links, forms or other interactive components) and chosen by the prompt to fit what the message says, is stored the same way and returned on the turn; the UI validates it against its catalog (`medas-ui/components/chat/reply-ui.tsx`) and draws it under the message text, or drops it when it does not validate.
 
@@ -202,7 +204,7 @@ Real replies from the running app, each drawn from a spec the model returned und
 
 ### Data model
 
-`users` — id, email, role, timestamps.
+`users` — id, email, `clerk_user_id` (null until the first sign-in links the account), role, timestamps.
 
 `conversations` — id, FK to `users`, soft-delete flag, `created_at`.
 
@@ -326,6 +328,8 @@ The 12 PDF chunks come from D01–D08 and D13. D02 and D13 have two pages each, 
 The first tool, `search_patient_record(query)`, wraps [`rag_pipeline/search.py`](medas-api/rag_pipeline/search.py) (`search_record`). The model decides whether to search, what to search for and how many times, and sends only the query. The patient is fixed by the service: `/ask` passes `pat_{users.id}` to the run as LangChain runtime context, and the tool reads it from there. It's never a tool argument, so a message claiming another record id can't become a read of someone else's chart.
 
 A second tool, `add_patient_document(document)`, adds a PDF the patient attaches to their message, over [`langchain_agent/documents.py`](medas-api/langchain_agent/documents.py) (`add_document`). There is no staging table: the file travels in the run's context (`RecordContext.attachments`, passed to `answer(..., attachments=)`) and lives no longer than the run. The model only names an attachment by file name; any other name is refused. Checking and storing are one call, so there is no order for the model to get wrong: `load_pdf`'s checks, then `averify`, then the store write, and a refusal at either check stores nothing. The tool never returns the document's text to the model: the file is untrusted, and this agent can write to the record.
+
+A third tool, `export_conversation_pdf()`, takes no argument: it renders the run's own message history to a PDF with reportlab ([`langchain_agent/export.py`](medas-api/langchain_agent/export.py)) and writes it to `medas-api/exports/`, which is git-ignored. The model can export this conversation and no other. Nothing serves the file yet (see Known gaps).
 
 Each search embeds the query with the same model as the corpus. It returns the 5 nearest passages, filtered on `patient_id` in the SQL, each with its `chunk_id`, text and cosine distance (lower is nearer). The store returns its 5 nearest whether or not any of them are near, so the distance is the only signal that nothing relevant was found. An account with no indexed record gets no passages, and is told its record shows nothing relevant.
 
@@ -628,7 +632,7 @@ Read the numbers with these in mind:
 
 ## Testing
 
-141 tests in medas-api, 32 in medas-ui.
+178 tests in medas-api, 69 in medas-ui.
 
 The agent is stubbed at one seam. `controller.conversation.ask_agent` is what every test patches, so the model, the tool, the prompt and the vector store all stay out of the suite — otherwise it would be slow, billable, non-deterministic, and impossible in CI where none of them exist. The fake records the turns it was given, which is how the history tests assert on what the agent was actually told.
 
@@ -636,10 +640,12 @@ Auth is split the same way. Route tests override `current_user`, so they run as 
 
 On the frontend:
 
-- [`medas-ui/api/chat.test.ts`](medas-ui/api/chat.test.ts) stubs `globalThis.fetch` rather than mocking the module, so URL building and response mapping actually run — every bug this file has had lived in exactly those two places. The Clerk session is mocked: the token goes out as a bearer header and never as a URL parameter, and `ask` refuses a signed-out caller before it reaches the API. It also covers when the greeting name is sent: on the first message only, and not at all without a first name.
-- [`medas-ui/api/init.test.ts`](medas-ui/api/init.test.ts) covers the page-load call the same way: the name in `?user=`, left off when there is none, and a refused request thrown rather than rendered. Both files share the Clerk and `fetch` stubs in [`medas-ui/test/api.ts`](medas-ui/test/api.ts).
+- [`medas-ui/api/chat.test.ts`](medas-ui/api/chat.test.ts) stubs `globalThis.fetch` rather than mocking the module, so URL building and response mapping actually run — every bug this file has had lived in exactly those two places. The Clerk session is mocked: the token goes out as a bearer header and never as a URL parameter, and `ask` refuses a signed-out caller before it reaches the API.
+- [`medas-ui/api/init.test.ts`](medas-ui/api/init.test.ts) covers the page-load call the same way: the session token alone, the past conversations mapped to camelCase, and a refused request thrown rather than rendered. Both files share the Clerk and `fetch` stubs in [`medas-ui/test/api.ts`](medas-ui/test/api.ts).
 - [`medas-ui/components/chat/chat-composer.test.tsx`](medas-ui/components/chat/chat-composer.test.tsx) mocks the API client instead, and covers what the composer sends, what it does with the answer, and what it shows when a send fails. An `ask` held open by the test covers the wait in between: the message shown before the reply, handed over to its stored copy once, and no second send until then.
 - [`medas-ui/components/chat/chat-messages.test.tsx`](medas-ui/components/chat/chat-messages.test.tsx) covers the list around that wait — the typing indicator up only while a message is pending, the greeting kept in view, and a scroll to the bottom when it grows. jsdom has no layout, so `scrollIntoView` and `matchMedia` are stubbed and the test asserts the call, not the scroll.
+
+- [`medas-ui/components/app-sidebar.test.tsx`](medas-ui/components/app-sidebar.test.tsx) covers the sidebar: the past conversations listed, one opened into the chat (or kept as it was, with a toast, when opening fails), and a new conversation started. [`reply-ui.test.tsx`](medas-ui/components/chat/reply-ui.test.tsx) covers the json-render catalog: a spec it accepts is drawn, one it rejects draws nothing.
 
 API response shapes live in `medas-ui/test/fixtures.ts`, so a contract change is a one-file edit. `test/setup.ts` resets the store before each test — it is a module singleton, so without that, whichever test ran first would decide the next one's result.
 
@@ -670,7 +676,7 @@ The build needs no API. `/` renders per request, so nothing is fetched while bui
 
 **A reply arrives with no severity badge.** The model answered in prose instead of the JSON the prompt asks for. The text is a real answer and is shown as-is; only the code is missing.
 
-**Sending 500s.** Usually `OPENROUTER_API_KEY`: it is read when the agent's graph is first built, on the first request, so the API boots happily and fails on the first message. The agent has no error handling of its own, so anything the model call raises reaches the client as a 500.
+**Sending answers 503.** The model could not be reached or did not answer, usually `OPENROUTER_API_KEY`: it is read when the agent's graph is first built, on the first request, so the API boots happily and fails on the first message. The cause is in the API's log, and the chat shows the stored apology on the next load. Anything else that goes wrong inside the agent is still a 500.
 
 **A reply takes a very long time, or fails with a context-length error.** The agent kept searching. Nothing bounds its loop — see Known gaps.
 
@@ -680,23 +686,24 @@ The build needs no API. `/` renders per request, so nothing is fetched while bui
 
 ## Status
 
-Working end to end: the chat UI, one endpoint that starts a conversation or continues it, multi-turn answers grounded in the patient's record with the triage code rendered as a badge, Postgres persistence, and the chunking and embedding pipeline with its pgvector index.
+Working end to end: the chat UI with a sidebar of past conversations, PDF upload and conversation export, one endpoint that starts a conversation or continues it, multi-turn answers grounded in the patient's record with the triage code rendered as a badge, Postgres persistence, and the chunking and embedding pipeline with its pgvector index.
 
 ### Known gaps
 
 Safety and correctness first, because these are the ones that matter if this ever sees a real record.
 
 - **Nothing bounds the agent's search loop.** `create_agent` defaults its recursion limit to 9,999, and the model will keep rephrasing a query it has already run. Observed: a single request accumulating ~112,000 tokens of passages — against a record that is ~2,400 tokens in total — until it exceeded the model's context window and the patient got nothing. Withdrawing the tool after a budget of searches is the fix that worked; a recursion limit alone stops the run but ends it without an answer.
-- **The agent has no error handling.** `answer()` has no try/except, so a failed model call is a 500 rather than something the patient can act on.
+- **Only model errors are handled.** `answer()` turns an OpenAI SDK error into a 503 and a stored apology; any other failure inside the run (a tool, the database) is still a 500.
 - **The prompt documents a `<patient>` block that is never sent.** Its Inputs section describes identity and demographics arriving with each question; the route sends only the conversation. The model learns who the patient is from the identity line repeated in each retrieved chunk, which works but is not what the prompt says.
 - **History is sent whole.** Every stored turn goes to the model on every request, and the transcript is re-sent on each turn within a run, so a long thread costs more with every message in it.
-- **Chat can't attach files yet.** `POST /ask` does not accept files, so in a conversation the document tool answers `not attached`; only `POST /documents` reaches them. It also has no size cap: the upload is read into memory whole.
+- **Files go through `/documents`, not the chat message.** The composer's paperclip posts to `POST /documents`; `POST /ask` does not accept files, so a PDF named in a typed message gets `not attached`. The upload has no size cap: it is read into memory whole.
+- **An exported PDF can't be downloaded.** The export tool writes the file to `medas-api/exports/` and tells the model it exported; no route serves it and nothing tells the UI it exists.
 - **A search returns five passages.** `n_results=5`, so a question like "what episodes are in my record?" is answered from the five nearest chunks — the record holds ten episodes, and the model has no way to know it saw half of them.
 - **PII masking is English-only and only in PDFs.** Non-English documents (D08 is Italian) get some ordinary words masked as `<PERSON>`, and the record JSON and the identity line are not masked. The patient's own name and date of birth are kept on purpose. Masked chunks have not been run through the eval yet, so the effect on recall is unmeasured.
 
 Then the smaller ones:
 
-- **No history on reload.** `GET /conversations/{id}` exists, but nothing calls it: the UI keeps the history it was given in memory, so a refresh returns to the greeting with the stored conversation orphaned.
+- **A reload doesn't reopen the conversation.** The UI keeps the open conversation in memory, so a refresh returns to the greeting; the conversation is still stored, and one click in the sidebar reopens it.
 - **Rate limits are per process.** The counters live in memory (`ratelimit.py`), so they reset on restart and multiply with the number of workers; a shared store (`storage_uri`) would fix both.
 - **No idempotency.** A double-submitted first message creates two conversations.
 - **A submit before hydration is lost.** The composer uses an `onSubmit` handler rather than a form action, so a submission made before React hydrates navigates to `/?message=…` and the message is dropped. React queues submissions for a `<form action={…}>`; a plain handler cannot.
