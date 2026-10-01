@@ -10,9 +10,19 @@ import { unstable_rethrow } from "next/navigation"
 import { init } from "@/api/init"
 
 // What the page shows when init fails: the greeting an account without a
-// name gets (greeting_text in medas-api), and no past conversations.
+// name gets (greeting_texts in medas-api), and no past conversations.
 const FALLBACK: Awaited<ReturnType<typeof init>> = {
-  messages: [{ role: "assistant", text: "Hi there, how can I help you?" }],
+  messages: [
+    {
+      role: "assistant",
+      text: "Hi there, I'm Medas. I answer questions about your own medical record.",
+    },
+    {
+      role: "assistant",
+      text: "You can ask me about your conditions, medications, test results or history. You can upload a PDF with the paperclip button and I'll add it to your record if it checks out. And you can ask me to export this conversation as a PDF.",
+    },
+    { role: "assistant", text: "Where would you like to start?" },
+  ],
   conversations: [],
 }
 

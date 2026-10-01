@@ -10,7 +10,7 @@ from database.database import Base
 from model.conversation import (
     Conversation,
     create_conversation,
-    greeting_text,
+    greeting_texts,
     list_conversations,
 )
 from model.message import Message, MessageRole, append_message, list_messages
@@ -34,7 +34,7 @@ __all__ = [
     "append_message",
     "create_clerk_user",
     "create_conversation",
-    "greeting_text",
+    "greeting_texts",
     "link_clerk_user",
     "list_conversations",
     "list_messages",

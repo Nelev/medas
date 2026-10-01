@@ -106,14 +106,16 @@ export function MessageRow({
               speaker's avatar, so the two sides read apart at a glance. The
               assistant sits on the sage wash with a rule down its left edge --
               a margin mark, the way an annotated chart is marked. */}
+          {/* text-[0.8125rem] (13px) over the primitive's text-sm: a notch
+              smaller, so the long greeting and replies sit lighter. */}
           <BubbleContent
             {...contentProps}
             className={
               isUser
-                ? "bg-primary! shadow-primary/25 rounded-2xl rounded-br-md px-4 py-2.5 shadow-md"
+                ? "bg-primary! shadow-primary/25 rounded-2xl rounded-br-md px-4 py-2.5 text-[0.8125rem] shadow-md"
                 : isUrgent
-                  ? "bg-pulse/7! border-pulse/25 border-l-pulse rounded-2xl rounded-bl-md border border-l-2 px-4 py-2.5"
-                  : "bg-secondary! border-primary/15 border-l-primary/55 rounded-2xl rounded-bl-md border border-l-2 px-4 py-2.5"
+                  ? "bg-pulse/7! border-pulse/25 border-l-pulse rounded-2xl rounded-bl-md border border-l-2 px-4 py-2.5 text-[0.8125rem]"
+                  : "bg-secondary! border-primary/15 border-l-primary/55 rounded-2xl rounded-bl-md border border-l-2 px-4 py-2.5 text-[0.8125rem]"
             }
           />
         </Bubble>
