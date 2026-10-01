@@ -14,7 +14,7 @@
     "actual_params": {
       "query": "current medications"
     },
-    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"The record does not mention any current medications you are taking.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"current medications\"\n}"
+    "response": "{\"severity\":\"S5\",\"confidence\":\"high\",\"message\":\"Your record does not list any current medications.\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[\"c1\"],\"record_gaps\":\"searched for current medications and found none\",\"ui\":null}"
   },
   {
     "query": "Am I allergic to ibuprofen?",
@@ -31,7 +31,7 @@
     "actual_params": {
       "query": "ibuprofen allergy"
     },
-    "response": "{\"severity\":\"S5\",\"confidence\":\"high\",\"message\":\"Your record shows that you have an allergy to penicillin, but there is no mention of an allergy to ibuprofen. Therefore, you are likely not allergic to ibuprofen based on the information available.\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[\"c1\"],\"record_gaps\":\"None\"}"
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"Your record does not show an allergy to ibuprofen. It lists an allergy to penicillin instead. If you have experienced any reactions to ibuprofen that are not recorded here, please let your healthcare provider know.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [\"c1\"],\n  \"record_gaps\": \"No mention of ibuprofen allergy found in your record.\",\n  \"ui\": {\n    \"root\": \"card\",\n    \"elements\": {\n      \"card\": {\n        \"type\": \"Card\",\n        \"props\": {\n          \"title\": \"Allergy information from your record\"\n        },\n        \"children\": [\"table\"]\n      },\n      \"table\": {\n        \"type\": \"Table\",\n        \"props\": {\n          \"columns\": [\"Substance\", \"Reaction\"],\n          \"rows\": [[\"Penicillin\", \"Allergy noted\"]]\n        },\n        \"children\": []\n      }\n    }\n  }\n}"
   },
   {
     "query": "upload file requested: letter.pdf",
@@ -48,18 +48,20 @@
     "actual_params": {
       "document": "letter.pdf"
     },
-    "response": "{\"severity\":\"S5\",\"confidence\":\"high\",\"message\":\"The document 'letter.pdf' has been successfully uploaded to your record.\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[],\"record_gaps\":\"\"}"
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"You uploaded a letter, which has been added to your record. If you have any questions about it or need information related to your health, please let me know how I can assist you.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
   },
   {
     "query": "export this conversation as pdf",
-    "expected_tool": "export_conversation_pdf",
+    "expected_tool": "export_conversation",
     "expected_params": null,
     "difficulty": "easy",
     "tool_correct": true,
     "params_correct": true,
-    "actual_tool": "export_conversation_pdf",
-    "actual_params": {},
-    "response": "{\"severity\":\"S5\",\"confidence\":\"high\",\"message\":\"Your conversation has been exported as a PDF file named 'conversation-eval.pdf'.\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[],\"record_gaps\":\"\"}"
+    "actual_tool": "export_conversation",
+    "actual_params": {
+      "format": "pdf"
+    },
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"I have exported this conversation as a PDF file named 'conversation-eval.pdf'. You can download it as needed.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
   },
   {
     "query": "The new pills make my chest feel a bit tight after meals.",
@@ -74,9 +76,9 @@
     "params_correct": true,
     "actual_tool": "search_patient_record",
     "actual_params": {
-      "query": "tightness in chest"
+      "query": "chest tightness"
     },
-    "response": "{\"severity\":\"S1\",\"confidence\":\"low\",\"message\":\"You should seek emergency care right away. Tightness in your chest can be a serious issue, especially if it's related to new medications. Please call emergency services or go to the nearest emergency department immediately.\",\"differential\":[{\"possibility\":\"Medication side effect\",\"supports\":\"New pills could cause side effects such as chest tightness, especially if these are medications that affect the heart or respiratory system.\",\"against\":\"Not previously documented as a side effect in your record.\"},{\"possibility\":\"Allergic reaction\",\"supports\":\"Tightness can indicate an allergic reaction, especially to medications.\",\"against\":\"You previously noted an allergy to penicillin, but it’s unclear if this new medication is related.\"}],\"questions\":[],\"safety_net\":\"\",\"citations\":[],\"record_gaps\":\"No specific information about new medications or their side effects.\"}"
+    "response": "{\n  \"severity\": \"S3\",\n  \"confidence\": \"moderate\",\n  \"message\": \"Your new pills causing a slight chest tightness after meals could be due to a mild side effect such as esophageal irritation or an early reaction to the medication. Since you have an allergy to penicillin noted in your record, it's important to ensure that the new medication is not related to that allergy. If the tightness worsens, spreads, or comes with other symptoms like difficulty breathing, seek urgent care. Otherwise, please contact your prescribing doctor to discuss this side effect and possibly adjust your medication.\",\n  \"differential\": [\n    {\n      \"possibility\": \"Medication side effect\",\n      \"supports\": \"Onset after starting new pills and timing after meals\",\n      \"against\": \"No severe symptoms like chest pain or breathlessness reported\"\n    },\n    {\n      \"possibility\": \"Mild esophageal irritation\",\n      \"supports\": \"Chest tightness after meals may reflect irritation or reflux\",\n      \"against\": \"No heartburn or acid reflux symptoms mentioned\"\n    }\n  ],\n  \"questions\": [\n    \"When did you start the new pills?\",\n    \"Is the chest tightness constant or does it come and go?\",\n    \"Do you have any other symptoms like shortness of breath, pain spreading to your arm or jaw, or swallowing difficulty?\"\n  ],\n  \"safety_net\": \"Seek urgent care if the chest tightness worsens, spreads to your arm, jaw, or back, or comes with breathlessness or swallowing difficulty.\",\n  \"citations\": [\"c1\"],\n  \"record_gaps\": \"No specific information found about the new medication itself or prior episodes of chest tightness.\",\n  \"ui\": null\n}"
   },
   {
     "query": "Here are my latest blood results (blood_test_2026.pdf), can you keep them with my file?",
@@ -93,7 +95,7 @@
     "actual_params": {
       "document": "blood_test_2026.pdf"
     },
-    "response": "{\"severity\":\"S5\",\"confidence\":\"high\",\"message\":\"I've stored your latest blood results with your file. If you have any questions about the results or need further assistance, feel free to ask!\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[],\"record_gaps\":\"\"}"
+    "response": "{\"severity\":\"S5\",\"confidence\":\"high\",\"message\":\"Your latest blood test results have been successfully added to your file. If you have questions about specific results, feel free to ask.\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[],\"record_gaps\":\"\",\"ui\":null}"
   },
   {
     "query": "Did I ever have a reaction like this before? My throat itches.",
@@ -104,9 +106,9 @@
     "params_correct": true,
     "actual_tool": "search_patient_record",
     "actual_params": {
-      "query": "throat itches"
+      "query": "throat itching reaction"
     },
-    "response": "{\"severity\":\"S1\",\"confidence\":\"high\",\"message\":\"You need to seek emergency care now. Itching in the throat can be a sign of a serious allergic reaction, especially since you have a known allergy to penicillin. Please call emergency services or go to the nearest emergency department immediately.\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[\"c1\"],\"record_gaps\":\"\"}"
+    "response": "{\n  \"severity\": \"S4\",\n  \"confidence\": \"low\",\n  \"message\": \"Your record shows you are allergic to penicillin, but it does not mention any previous throat itching reactions. This symptom might be mild or an early sign of an allergy or irritation. It's reasonable to watch it for now but seek medical advice if it worsens or you develop other symptoms like swelling, difficulty breathing, or rash.\",\n  \"differential\": [\n    {\n      \"possibility\": \"Mild allergic reaction\",\n      \"supports\": \"Itchy throat can be an early sign of an allergy, and you have a known allergy to penicillin.\",\n      \"against\": \"No previous similar reactions documented in your record; symptom so far limited to itching.\"\n    },\n    {\n      \"possibility\": \"Irritation or mild inflammation\",\n      \"supports\": \"Throat itching can happen from irritants like dry air, dust, or minor infections.\",\n      \"against\": \"You mention a specific symptom without other irritation signs.\"\n    }\n  ],\n  \"questions\": [\n    \"When did your throat start itching?\",\n    \"Is your throat itching getting worse, or is it constant?\",\n    \"Do you have other symptoms like swelling, difficulty breathing, rash, or fever?\"\n  ],\n  \"safety_net\": \"Seek urgent care if you develop throat swelling, difficulty breathing or swallowing, widespread rash, or feel faint.\",\n  \"citations\": [\"c1\"],\n  \"record_gaps\": \"No specific mention of previous throat itching or similar allergic reactions found.\",\n  \"ui\": {\n    \"root\": \"alert\",\n    \"elements\": {\n      \"alert\": {\n        \"type\": \"Alert\",\n        \"props\": {\n          \"type\": \"warning\",\n          \"title\": \"Seek care sooner if\",\n          \"message\": \"You develop throat swelling, difficulty breathing or swallowing, widespread rash, or feel faint.\"\n        },\n        \"children\": []\n      }\n    }\n  }\n}"
   },
   {
     "query": "What does hypertension mean?",
@@ -117,18 +119,54 @@
     "params_correct": true,
     "actual_tool": null,
     "actual_params": null,
-    "response": "{\"severity\":\"S5\",\"confidence\":\"high\",\"message\":\"Hypertension means having high blood pressure. Blood pressure is the force of blood against the walls of your arteries. When this pressure consistently stays higher than normal, it can lead to health problems. If you have concerns about your blood pressure, it's best to discuss them with a healthcare provider.\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[],\"record_gaps\":\"\"}"
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"Hypertension means high blood pressure. It is a condition where the force of the blood against your artery walls is too high, which can lead to health problems if not managed properly.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
   },
   {
     "query": "Can I get a PDF copy of our chat to show my GP?",
-    "expected_tool": "export_conversation_pdf",
+    "expected_tool": "export_conversation",
     "expected_params": null,
     "difficulty": "medium",
     "tool_correct": true,
     "params_correct": true,
-    "actual_tool": "export_conversation_pdf",
-    "actual_params": {},
-    "response": "{\"severity\":\"S5\",\"confidence\":\"high\",\"message\":\"I have generated a PDF copy of our conversation for you. You can show this to your GP. The file is named 'conversation-eval.pdf'.\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[],\"record_gaps\":\"\"}"
+    "actual_tool": "export_conversation",
+    "actual_params": {
+      "format": "pdf"
+    },
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"I have prepared a PDF copy of our chat for you. You can download it to show your GP. The file is named conversation-eval.pdf.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "Give me this conversation as a spreadsheet file",
+    "expected_tool": "export_conversation",
+    "expected_params": {
+      "format": [
+        "csv"
+      ]
+    },
+    "difficulty": "medium",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": "export_conversation",
+    "actual_params": {
+      "format": "csv"
+    },
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"I have prepared the conversation as a PDF file since CSV or JSON were not available for export. The file name is conversation-eval.pdf. You can download and view it.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
+  },
+  {
+    "query": "export our chat to json please",
+    "expected_tool": "export_conversation",
+    "expected_params": {
+      "format": [
+        "json"
+      ]
+    },
+    "difficulty": "medium",
+    "tool_correct": true,
+    "params_correct": true,
+    "actual_tool": "export_conversation",
+    "actual_params": {
+      "format": "json"
+    },
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"I have exported our chat for you as a PDF file named 'conversation-eval.pdf'. If you need it in another format or anything else, just let me know.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
   },
   {
     "query": "I attached my discharge letter, letter.pdf. Store it, then tell me whether it changes which drugs I should avoid.",
@@ -145,7 +183,7 @@
     "actual_params": {
       "document": "letter.pdf"
     },
-    "response": "{\"severity\":\"S5\",\"confidence\":\"high\",\"message\":\"Your discharge letter has been successfully stored. According to your medical record, you have an allergy to penicillin. You should avoid any medications containing penicillin. Since there's no indication of any new allergies or drug interactions in the letter yet, it doesn't change the current drugs you should avoid.\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[\"c1\"],\"record_gaps\":\"\"}"
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"Your discharge letter has been added to your record. It does not add any new information about drugs you should avoid. Your record shows an allergy to penicillin, so you should continue to avoid penicillin antibiotics. There are no other drug avoidance changes indicated by the letter.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [\"c1\"],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
   },
   {
     "query": "I took aspirin and now my lips are swelling. What am I on already?",
@@ -157,12 +195,12 @@
     },
     "difficulty": "hard",
     "tool_correct": true,
-    "params_correct": false,
+    "params_correct": true,
     "actual_tool": "search_patient_record",
     "actual_params": {
-      "query": "lips swelling"
+      "query": "current medication"
     },
-    "response": "{\"severity\":\"S1\",\"confidence\":\"high\",\"message\":\"You need to seek emergency care immediately. Swelling of the lips can be a sign of a serious allergic reaction, especially after taking a new medication like aspirin. Call emergency services or go to the nearest emergency department right now.\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[\"c1\"],\"record_gaps\":\"\"}"
+    "response": "{\n  \"severity\": \"S1\",\n  \"confidence\": \"high\",\n  \"message\": \"Your lips are swelling after taking aspirin, which may be a sign of a serious allergic reaction. This is an emergency. Please seek emergency care immediately by calling emergency services or going to the nearest emergency department.\",\n  \"differential\": [\n    {\n      \"possibility\": \"Allergic reaction to aspirin\",\n      \"supports\": \"Swelling of lips shortly after taking aspirin, which is a known allergenic trigger for some people\",\n      \"against\": \"\"\n    }\n  ],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"The record does not mention any current medications or known allergies related to aspirin or salicylates.\",\n  \"ui\": {\n    \"root\": \"alert\",\n    \"elements\": {\n      \"alert\": {\n        \"type\": \"Alert\",\n        \"props\": {\n          \"type\": \"error\",\n          \"title\": \"Emergency: Swelling lips after aspirin\",\n          \"message\": \"Please seek emergency care immediately.\"\n        },\n        \"children\": []\n      }\n    }\n  }\n}"
   },
   {
     "query": "upload file requested: report.pdf",
@@ -175,7 +213,7 @@
     "actual_params": {
       "document": "report.pdf"
     },
-    "response": "{\"severity\":\"S5\",\"confidence\":\"high\",\"message\":\"Your document has been uploaded successfully. How can I assist you further?\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[],\"record_gaps\":\"\"}"
+    "response": "{\"severity\":\"S5\",\"confidence\":\"high\",\"message\":\"The document you uploaded was not attached correctly. Please try uploading it again if you want me to look at it.\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[],\"record_gaps\":\"\",\"ui\":null}"
   },
   {
     "query": "Thanks, that is all!",
@@ -186,7 +224,7 @@
     "params_correct": true,
     "actual_tool": null,
     "actual_params": null,
-    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"If you have any further questions or concerns, feel free to reach out.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\"\n}"
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"You're welcome! If you have more questions later, feel free to ask.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
   },
   {
     "query": "Tell me a joke.",
@@ -197,18 +235,20 @@
     "params_correct": true,
     "actual_tool": null,
     "actual_params": null,
-    "response": "{\"severity\":\"S5\",\"confidence\":\"high\",\"message\":\"I can’t help with that. I’m here to assist you with medical inquiries and health concerns. Let me know if you have any questions regarding your health!\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[],\"record_gaps\":\"\"}"
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"I can't tell jokes, but I'm here to help with your health questions or concerns. How can I assist you today?\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
   },
   {
     "query": "What medications is my sister taking?",
     "expected_tool": null,
     "expected_params": null,
     "difficulty": "edge_case",
-    "tool_correct": true,
-    "params_correct": true,
-    "actual_tool": null,
-    "actual_params": null,
-    "response": "{\"severity\":\"S5\",\"confidence\":\"high\",\"message\":\"I can't provide information about anyone else's medications, including your sister's. This system is designed to assist you based on your own medical record. If you have questions about your own medications or health, feel free to ask!\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[],\"record_gaps\":\"\"}"
+    "tool_correct": false,
+    "params_correct": false,
+    "actual_tool": "search_patient_record",
+    "actual_params": {
+      "query": "medications sister"
+    },
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"I cannot access information about your sister's medications because this record is for you. If you want to know about your own medications, I can help with that.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
   },
   {
     "query": "How do I book an appointment with my GP?",
@@ -219,7 +259,7 @@
     "params_correct": true,
     "actual_tool": null,
     "actual_params": null,
-    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"To book an appointment with your GP, please call their office directly or use their online booking system if available. You may also consider visiting their website for more information on booking procedures.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\"\n}"
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"To book an appointment with your GP, you typically need to contact your GP surgery directly. This can often be done by phone, online via the practice's website, or through a patient app if your practice uses one. If you need help finding the contact details or booking method for your GP practice, I can assist with that.\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
   },
   {
     "query": "Can you email this conversation to my GP?",
@@ -230,6 +270,6 @@
     "params_correct": true,
     "actual_tool": null,
     "actual_params": null,
-    "response": "{\"severity\":\"S5\",\"confidence\":\"high\",\"message\":\"I'm unable to email this conversation. You may want to copy the information and send it to your GP directly.\",\"differential\":[],\"questions\":[],\"safety_net\":\"\",\"citations\":[],\"record_gaps\":\"\"}"
+    "response": "{\n  \"severity\": \"S5\",\n  \"confidence\": \"high\",\n  \"message\": \"I can't send emails or contact your GP directly. However, I can export this conversation as a file for you to download and share with your GP. Would you like me to create a PDF, JSON, or CSV file?\",\n  \"differential\": [],\n  \"questions\": [],\n  \"safety_net\": \"\",\n  \"citations\": [],\n  \"record_gaps\": \"\",\n  \"ui\": null\n}"
   }
 ]

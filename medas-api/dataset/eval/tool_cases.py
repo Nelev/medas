@@ -11,7 +11,7 @@ from schema import Attachment
 RECORD_ID = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 SEARCH = "search_patient_record"
 ADD = "add_patient_document"
-EXPORT = "export_conversation_pdf"
+EXPORT = "export_conversation"
 LETTER = Attachment("letter.pdf", b"%PDF-1.4")
 LAB = Attachment("blood_test_2026.pdf", b"%PDF-1.4")
 
@@ -65,6 +65,13 @@ test_cases = [
     ),
     case("What does hypertension mean?", "medium"),
     case("Can I get a PDF copy of our chat to show my GP?", "medium", EXPORT),
+    case(
+        "Give me this conversation as a spreadsheet file",
+        "medium",
+        EXPORT,
+        {"format": ["csv"]},
+    ),
+    case("export our chat to json please", "medium", EXPORT, {"format": ["json"]}),
     # -- Hard: blended intents, a missing file --
     case(
         "I attached my discharge letter, letter.pdf. Store it, then tell me "
