@@ -190,6 +190,14 @@ Even so the model sometimes answers in prose — most often on a red flag, where
 
 **The catalog is an allow-list, and it is a security boundary.** The spec is model output derived from a record that can carry injected text, so only read-only display components are registered: `Card`, `Stack`, `Grid`, `Separator`, `Collapsible`, `Accordion`, `Table`, `Heading`, `Text`, `Badge`, `Alert`, `Progress`, with `actions: {}`. `Image`, `Avatar` and `Link` are left out because they load or follow a URL the model chose; forms, buttons, dialogs and menus because the reply has no actions or state to bind them to; `Tabs` because it needs bound state; `Carousel` because it does not suit a chat bubble. Two things must stay in step when the set changes: the catalog and registry in `reply-ui.tsx`, and the component table in the prompt. `globals.css` also adds an `@source` line for `@json-render/shadcn/dist`, because Tailwind skips `node_modules` and would otherwise drop the library's classes.
 
+#### What it looks like
+
+Real replies from the running app, each drawn from a spec the model returned under its message text. The red or amber `Alert`, the `Card` and the `Table` are the same shadcn components the catalog allows; the `S1`–`S3` badge underneath is the reply's severity, not part of the spec.
+
+| A question about appointments: one `Card` per appointment, each holding a `Table`, and an `Alert` for when to seek care sooner |  An allergy check: an `Alert` first, then a `Card` with the matching row of the record in a `Table`  |                      A conditions overview: a single `Card` and `Table`                      |
+| :----------------------------------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------: |
+|         ![Appointments rendered as Card and Table components, with a warning Alert](docs/json-render/appointments.jpg)         | ![Ibuprofen allergy rendered as an Alert above a Card and Table](docs/json-render/allergy-alert.jpg) | ![Current conditions rendered as a Card and Table](docs/json-render/conditions-overview.jpg) |
+
 ### Data model
 
 `users` — id, email, role, timestamps.
