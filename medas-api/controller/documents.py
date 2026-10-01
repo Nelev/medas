@@ -15,13 +15,17 @@ from controller.conversation import answer_and_store, write_user_turn
 from langchain_agent.patient import record_id
 from model import MessageRole
 from rag_pipeline.record import find_record
-from schema import Attachment, RecordNotFound
+from schema import Attachment, FileTooLarge, NotAPdf, RecordNotFound
 from utils import messages_as_turns
 
 __all__ = ["index_upload"]
 
 # The user's turn an upload writes, before the agent is asked.
 UPLOAD_REQUESTED = "upload file requested"
+
+# A medical letter or lab report is well under this; the ceiling is what one
+# request may make the server hold in memory and parse.
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
 async def index_upload(
@@ -42,6 +46,15 @@ async def index_upload(
     if find_record(record_id(user_id)) is None:
         raise RecordNotFound
 
+    # Read, bounded and checked before anything is written: a refused file
+    # leaves no turn behind and costs no model call. One byte over the limit
+    # is enough to know, so the rest is never read.
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise FileTooLarge
+    if not content.startswith(b"%PDF-"):
+        raise NotAPdf
+
     name = file.filename or "upload.pdf"
 
     # Named in the turn, so the chat shows which file was sent.
@@ -61,7 +74,7 @@ async def index_upload(
         conversation_id,
         user_id,
         messages_as_turns([], f"Please add the attached document {name} to my record."),
-        attachments=[Attachment(name, await file.read())],
+        attachments=[Attachment(name, content)],
     )
     await session.commit()
 

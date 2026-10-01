@@ -439,6 +439,8 @@ async def test_ask_on_a_missing_or_deleted_conversation_is_404(
         pytest.param({"role": "user"}, id="missing-text"),
         pytest.param({"role": "user", "text": " "}, id="blank-text"),
         pytest.param({"role": "system", "text": "hi"}, id="unknown-role"),
+        # A client must not write the model's side of the thread.
+        pytest.param({"role": "assistant", "text": "I agree."}, id="assistant-role"),
     ],
 )
 async def test_ask_rejects_invalid_payloads(
@@ -807,3 +809,26 @@ async def test_read_a_missing_or_deleted_conversation_is_404(client, fake_sessio
     response = await client.get(f"/conversations/{uuid.uuid4()}")
 
     assert response.status_code == 404
+
+
+async def test_an_oversized_upload_is_413_and_stores_nothing(
+    client, fake_session, stub_the_agent, has_record
+):
+    big = b"%PDF-" + b"0" * controller.documents.MAX_UPLOAD_BYTES
+    response = await client.post("/documents", files={"file": ("big.pdf", big)})
+
+    assert response.status_code == 413
+    assert not fake_session.committed
+    assert stub_the_agent == []
+
+
+async def test_a_non_pdf_upload_is_415_and_stores_nothing(
+    client, fake_session, stub_the_agent, has_record
+):
+    response = await client.post(
+        "/documents", files={"file": ("a.pdf", b"MZ not a pdf")}
+    )
+
+    assert response.status_code == 415
+    assert not fake_session.committed
+    assert stub_the_agent == []

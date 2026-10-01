@@ -10,7 +10,9 @@ __all__ = [
     "Attachment",
     "Chunk",
     "ConversationNotFound",
+    "FileTooLarge",
     "NewMessage",
+    "NotAPdf",
     "NotFound",
     "RecordContext",
     "RecordNotFound",
@@ -36,7 +38,9 @@ class NewMessage(BaseModel):
     # alone would not do this -- " " is one character and would pass.
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    role: Literal["user", "assistant"]
+    # Only "user": a client that could post an assistant turn would be writing
+    # the model's side of the thread, and it is replayed to the model as such.
+    role: Literal["user"]
     text: str = Field(min_length=1, max_length=MAX_TEXT_LENGTH)
 
 
@@ -63,6 +67,14 @@ class RecordNotFound(NotFound):
     """The signed-in user has no medical record to add a document to."""
 
     detail = "Record not found"
+
+
+class FileTooLarge(Exception):
+    """The upload is over the size limit."""
+
+
+class NotAPdf(Exception):
+    """The upload does not start like a PDF."""
 
 
 class AgentUnavailable(Exception):

@@ -22,12 +22,12 @@ def test_stored_turns_and_the_question_become_chat_turns():
 
 def test_a_json_reply_is_its_message_and_its_triage_code():
     reply = json.dumps(
-        {"message": "See your GP this week.", "severity": "S3", "confidence": 0.8}
+        {"message": "See your GP this week.", "severity": "S3", "confidence": "high"}
     )
 
     assert parse_agent_reply(reply) == (
         "See your GP this week.",
-        {"severity": "S3", "confidence": 0.8, "ui": None},
+        {"severity": "S3", "confidence": "high", "ui": None},
     )
 
 
@@ -48,3 +48,33 @@ def test_a_ui_spec_travels_with_the_turn():
 )
 def test_a_reply_that_is_not_the_object_asked_for_is_shown_as_it_stands(reply):
     assert parse_agent_reply(reply) == (reply, {})
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        pytest.param('{"message": null}', id="null-message"),
+        pytest.param('{"message": {"a": 1}}', id="object-message"),
+        pytest.param('{"message": "  "}', id="blank-message"),
+        pytest.param('{"message": 7}', id="number-message"),
+    ],
+)
+def test_a_message_that_is_not_text_is_never_stored_as_one(reply):
+    assert parse_agent_reply(reply) == (reply, {})
+
+
+def test_triage_fields_outside_the_prompts_vocabulary_are_dropped():
+    reply = json.dumps(
+        {"message": "Rest.", "severity": ["S1"], "confidence": {"a": 1}, "ui": "x"}
+    )
+
+    assert parse_agent_reply(reply) == (
+        "Rest.",
+        {"severity": None, "confidence": None, "ui": None},
+    )
+
+
+def test_a_reply_in_content_blocks_is_read_as_its_text():
+    blocks = [{"type": "text", "text": '{"message": "Rest.", "severity": "S5"}'}]
+
+    assert parse_agent_reply(blocks)[0] == "Rest."
