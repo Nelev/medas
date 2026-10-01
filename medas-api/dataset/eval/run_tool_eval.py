@@ -29,8 +29,8 @@ async def _add_document(attachment, record_id):
     return 3
 
 
-def _export_conversation(turns):
-    return "conversation-eval.pdf"
+def _export_turns(turns, fmt):
+    return "conversation-eval.pdf", "pdf"
 
 
 def _params_correct(case: dict, tool_calls: list[dict]) -> bool:
@@ -90,7 +90,7 @@ async def _run_case(i: int, case: dict, agent) -> dict:
 async def main() -> None:
     agent_module.search_record = _search_record
     agent_module.add_document = _add_document
-    agent_module.export_conversation = _export_conversation
+    agent_module.export_turns = _export_turns
     agent = build_agent()
 
     results = [await _run_case(i, case, agent) for i, case in enumerate(test_cases)]

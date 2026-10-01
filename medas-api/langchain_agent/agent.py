@@ -25,7 +25,7 @@ from starlette.concurrency import run_in_threadpool
 
 from langchain_agent.assistant_general_prompt import ASSISTANT_SYSTEM_PROMPT
 from langchain_agent.documents import add_document
-from langchain_agent.export import export_conversation
+from langchain_agent.export import export_turns
 from rag_pipeline.search import search_record
 from schema import AgentUnavailable, Attachment, RecordContext, Rejected
 from utils import OPENROUTER_BASE_URL
@@ -78,8 +78,12 @@ async def add_patient_document(
 
 
 @tool
-async def export_conversation_pdf(runtime: ToolRuntime[RecordContext]) -> str:
-    """Export this conversation as a PDF file, when the patient asks for it."""
+async def export_conversation(
+    runtime: ToolRuntime[RecordContext], format: str = "pdf"
+) -> str:
+    """Export this conversation as a file, when the patient asks for it.
+    `format` is csv, json or pdf; leave it out, or pass anything
+    else, and the file is a PDF."""
     # The turns come from the run's own state, so there is nothing for the
     # model to name: it can export this conversation and no other.
     turns = [
@@ -88,8 +92,16 @@ async def export_conversation_pdf(runtime: ToolRuntime[RecordContext]) -> str:
         # Tool calls and their results are the agent's workings, not the chat.
         if m.type in ("human", "ai") and m.content
     ]
-    file = await run_in_threadpool(export_conversation, turns)
-    return json.dumps({"status": "exported", "file": file, "turns": len(turns)})
+    file, used = await run_in_threadpool(export_turns, turns, format)
+    return json.dumps(
+        {
+            "status": "exported",
+            "file": file,
+            "format": used,
+            "requested": format,
+            "turns": len(turns),
+        }
+    )
 
 
 @lru_cache
@@ -106,7 +118,7 @@ def build_agent():
             api_key=os.getenv("OPENROUTER_API_KEY"),
             extra_body={"response_format": {"type": "json_object"}},
         ),
-        tools=[search_patient_record, add_patient_document, export_conversation_pdf],
+        tools=[search_patient_record, add_patient_document, export_conversation],
         system_prompt=ASSISTANT_SYSTEM_PROMPT,
         context_schema=RecordContext,
     )

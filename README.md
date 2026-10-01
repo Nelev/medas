@@ -170,7 +170,7 @@ Two things that trip people up: who is asking, and the name the greeting address
 The route does not run a tool loop of its own. It assembles the conversation, hands it to a LangChain agent, and stores what comes back.
 
 1. **Assembles the turns.** Every stored message becomes `{role, content}` — the wire calls the field `text`, a chat model calls it `content` — and the new question goes last. The whole thread is sent, so the model answers in the context of everything said before rather than the last message alone.
-2. **Runs the agent.** [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py) is a `create_agent` graph with three tools (a search, one for adding a PDF the patient attaches, and one for exporting the conversation as a PDF) and [`langchain_agent/assistant_general_prompt.py`](medas-api/langchain_agent/assistant_general_prompt.py) as its system prompt. The graph decides for itself whether to search, how many times, and when it has enough to answer — which is the thing the hand-rolled loop this replaced could not do.
+2. **Runs the agent.** [`langchain_agent/agent.py`](medas-api/langchain_agent/agent.py) is a `create_agent` graph with three tools (a search, one for adding a PDF the patient attaches, and one for exporting the conversation as a csv, json or PDF file) and [`langchain_agent/assistant_general_prompt.py`](medas-api/langchain_agent/assistant_general_prompt.py) as its system prompt. The graph decides for itself whether to search, how many times, and when it has enough to answer — which is the thing the hand-rolled loop this replaced could not do.
 3. **Searches when it asks to.** The model cannot reach the vector store; only this process can, so a tool call is a question rather than an answer. `search_patient_record(query)` takes **only** a query: whose record is searched is fixed by the service, not chosen by the model, so a message claiming a different record id cannot become a read of somebody else's chart.
 4. **Reads the reply.** The prompt specifies one JSON object, so the route parses it for `message` — what the patient sees — and stores `severity` and `confidence` as metadata. An optional `ui` field, a [json-render](https://json-render.dev/docs/api/shadcn) spec built from the display components of the shadcn set (`Card`, `Stack`, `Grid`, `Separator`, `Collapsible`, `Accordion`, `Table`, `Heading`, `Text`, `Badge`, `Alert`, `Progress`; no images, links, forms or other interactive components) and chosen by the prompt to fit what the message says, is stored the same way and returned on the turn; the UI validates it against its catalog (`medas-ui/components/chat/reply-ui.tsx`) and draws it under the message text, or drops it when it does not validate.
 
@@ -329,7 +329,13 @@ The first tool, `search_patient_record(query)`, wraps [`rag_pipeline/search.py`]
 
 A second tool, `add_patient_document(document)`, adds a PDF the patient attaches to their message, over [`langchain_agent/documents.py`](medas-api/langchain_agent/documents.py) (`add_document`). There is no staging table: the file travels in the run's context (`RecordContext.attachments`, passed to `answer(..., attachments=)`) and lives no longer than the run. The model only names an attachment by file name; any other name is refused. Checking and storing are one call, so there is no order for the model to get wrong: `load_pdf`'s checks, then `averify`, then the store write, and a refusal at either check stores nothing. The tool never returns the document's text to the model: the file is untrusted, and this agent can write to the record.
 
-A third tool, `export_conversation_pdf()`, takes no argument: it renders the run's own message history to a PDF with reportlab ([`langchain_agent/export.py`](medas-api/langchain_agent/export.py)) and writes it to `medas-api/exports/`, which is git-ignored. The model can export this conversation and no other. Nothing serves the file yet (see Known gaps).
+A third tool, `export_conversation(format)`, writes the run's own message history to `medas-api/exports/` (git-ignored) as `conversation-<uuid>.<ext>` ([`langchain_agent/export.py`](medas-api/langchain_agent/export.py)). `format` is the only argument and the model fills it in: the tool description and the system prompt tell it to pass `csv`, `json` or `pdf` according to what the patient asked for ("a spreadsheet" means `csv`), and nothing in the code parses the message. The code only normalises the string (case, a leading dot); anything that is not `csv` or `json` — `docx`, an empty string, no format at all — gives a PDF. The reply is `{status, file, format, requested, turns}`, so the model can say that a PDF was written instead of what was asked for.
+
+- **`csv`** has the columns `turn,role,content`, one row per turn, in UTF-8 with a BOM so Excel reads accents. A cell that starts with `=`, `+`, `-` or `@` gets a leading `'` so a spreadsheet does not run it as a formula.
+- **`json`** is `{title, turns: [{role, content}]}`, the text exactly as sent.
+- **`pdf`** is rendered by markdown-pdf from a markdown version of the turns, with raw HTML switched off so markup in a turn is printed, not interpreted, and with lines that would open a heading or a code fence escaped so one turn cannot swallow the next.
+
+The model can export this conversation and no other. Nothing serves the file yet (see Known gaps).
 
 Each search embeds the query with the same model as the corpus. It returns the 5 nearest passages, filtered on `patient_id` in the SQL, each with its `chunk_id`, text and cosine distance (lower is nearer). The store returns its 5 nearest whether or not any of them are near, so the distance is the only signal that nothing relevant was found. An account with no indexed record gets no passages, and is told its record shows nothing relevant.
 
@@ -515,16 +521,16 @@ The top level also records `agent_model`, `judge_model` and `recursion_limit`.
 
 ### Tool-calling eval
 
-A separate, smaller check of one thing: does the model pick the right tool, with the right arguments? The agent has three tools, `search_patient_record`, `add_patient_document` and `export_conversation_pdf`. The questions above judge the answer; this judges the routing, so a wrong tool choice shows up on its own instead of being buried in an answer score.
+A separate, smaller check of one thing: does the model pick the right tool, with the right arguments? The agent has three tools, `search_patient_record`, `add_patient_document` and `export_conversation`. The questions above judge the answer; this judges the routing, so a wrong tool choice shows up on its own instead of being buried in an answer score.
 
-[`dataset/eval/tool_cases.py`](medas-api/dataset/eval/tool_cases.py) holds 17 cases, each a message, the tool it should trigger (or none), the keywords that tool's arguments should contain, and any PDFs sent with it:
+[`dataset/eval/tool_cases.py`](medas-api/dataset/eval/tool_cases.py) holds 19 cases, each a message, the tool it should trigger (or none), the keywords that tool's arguments should contain, and any PDFs sent with it:
 
-| Difficulty  | Cases | What it probes                                                                                                                                             |
-| ----------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `easy`      | 4     | A clear question about the record, an explicit upload, or an explicit PDF export                                                                           |
-| `medium`    | 5     | Indirect phrasing (a symptom, casual "keep these with my file", "a PDF copy of our chat"), and a general question that needs no tool                       |
-| `hard`      | 3     | An upload plus a follow-up question, a reaction that needs the allergy list, and an upload naming a file that was never attached (the tool must refuse it) |
-| `edge_case` | 5     | Nothing to look up: thanks, a joke, someone else's medications, how to book a GP, emailing the conversation                                                |
+| Difficulty  | Cases | What it probes                                                                                                                                                 |
+| ----------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `easy`      | 4     | A clear question about the record, an explicit upload, or an explicit export                                                                                   |
+| `medium`    | 7     | Indirect phrasing (a symptom, casual "keep these with my file", "a PDF copy of our chat"), an export in csv or json, and a general question that needs no tool |
+| `hard`      | 3     | An upload plus a follow-up question, a reaction that needs the allergy list, and an upload naming a file that was never attached (the tool must refuse it)     |
+| `edge_case` | 5     | Nothing to look up: thanks, a joke, someone else's medications, how to book a GP, emailing the conversation                                                    |
 
 [`dataset/eval/run_tool_eval.py`](medas-api/dataset/eval/run_tool_eval.py) runs each case through the same compiled agent as `/ask` one after another and reads the tool calls from the message history. The tools' backends are stubbed, so it needs no database, index or embeddings, only `OPENROUTER_API_KEY` in `medas-api/.env`. A case scores on two checks:
 
@@ -697,7 +703,7 @@ Safety and correctness first, because these are the ones that matter if this eve
 - **The prompt documents a `<patient>` block that is never sent.** Its Inputs section describes identity and demographics arriving with each question; the route sends only the conversation. The model learns who the patient is from the identity line repeated in each retrieved chunk, which works but is not what the prompt says.
 - **History is sent whole.** Every stored turn goes to the model on every request, and the transcript is re-sent on each turn within a run, so a long thread costs more with every message in it.
 - **Files go through `/documents`, not the chat message.** The composer's paperclip posts to `POST /documents`; `POST /ask` does not accept files, so a PDF named in a typed message gets `not attached`. The upload has no size cap: it is read into memory whole.
-- **An exported PDF can't be downloaded.** The export tool writes the file to `medas-api/exports/` and tells the model it exported; no route serves it and nothing tells the UI it exists.
+- **An exported file can't be downloaded.** The export tool writes the file to `medas-api/exports/` and tells the model it exported; no route serves it and nothing tells the UI it exists.
 - **A search returns five passages.** `n_results=5`, so a question like "what episodes are in my record?" is answered from the five nearest chunks — the record holds ten episodes, and the model has no way to know it saw half of them.
 - **PII masking is English-only and only in PDFs.** Non-English documents (D08 is Italian) get some ordinary words masked as `<PERSON>`, and the record JSON and the identity line are not masked. The patient's own name and date of birth are kept on purpose. Masked chunks have not been run through the eval yet, so the effect on recall is unmeasured.
 
