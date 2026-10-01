@@ -18,7 +18,7 @@ from database.database import dispose_engine, get_session, init_engine
 from model import greeting_texts, list_conversations
 from rag_pipeline.vector_store import init_vector_store
 from ratelimit import LIMITS, READ_LIMITS, limiter
-from schema import AgentUnavailable, NewMessage, NotFound
+from schema import AgentUnavailable, FileTooLarge, NewMessage, NotAPdf, NotFound
 
 # Copies .env into os.environ for what reads it directly rather than through
 # a settings class -- the agent's OPENROUTER_API_KEY among them.
@@ -63,6 +63,16 @@ async def not_found(_: Request, exc: NotFound) -> JSONResponse:
 async def agent_unavailable(_: Request, exc: AgentUnavailable) -> JSONResponse:
     logger.error("agent call failed", exc_info=exc.__cause__)
     return JSONResponse(status_code=503, content={"detail": "Assistant unavailable"})
+
+
+@app.exception_handler(FileTooLarge)
+async def file_too_large(_: Request, __: FileTooLarge) -> JSONResponse:
+    return JSONResponse(status_code=413, content={"detail": "File too large"})
+
+
+@app.exception_handler(NotAPdf)
+async def not_a_pdf(_: Request, __: NotAPdf) -> JSONResponse:
+    return JSONResponse(status_code=415, content={"detail": "Not a PDF"})
 
 
 # No CORS middleware: the browser never calls this API directly. The UI's

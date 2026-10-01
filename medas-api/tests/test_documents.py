@@ -10,7 +10,7 @@ from fastapi import UploadFile
 import rag_pipeline.record as records
 from controller import documents
 from controller.documents import index_upload
-from schema import Attachment, RecordNotFound
+from schema import Attachment, FileTooLarge, NotAPdf, RecordNotFound
 
 USER_ID = uuid.uuid4()
 CONVERSATION_ID = uuid.uuid4()
@@ -70,3 +70,35 @@ async def test_a_user_without_a_record_never_reaches_the_agent(calls):
     with pytest.raises(RecordNotFound):
         await index_upload(Session(), uuid.uuid4(), None, upload(), None)
     assert calls == []
+
+
+async def test_an_oversized_upload_is_refused_before_anything_is_written(calls):
+    big = UploadFile(
+        file=io.BytesIO(b"%PDF-" + b"0" * documents.MAX_UPLOAD_BYTES),
+        filename="big.pdf",
+    )
+
+    with pytest.raises(FileTooLarge):
+        await index_upload(Session(), USER_ID, None, big, None)
+
+    assert calls == []
+
+
+async def test_a_file_that_is_not_a_pdf_is_refused_before_anything_is_written(calls):
+    fake = UploadFile(file=io.BytesIO(b"MZ\x90 not a pdf"), filename="a.pdf")
+
+    with pytest.raises(NotAPdf):
+        await index_upload(Session(), USER_ID, None, fake, None)
+
+    assert calls == []
+
+
+async def test_a_file_at_the_limit_is_accepted(calls):
+    exact = UploadFile(
+        file=io.BytesIO(b"%PDF-" + b"0" * (documents.MAX_UPLOAD_BYTES - 5)),
+        filename="ok.pdf",
+    )
+
+    await index_upload(Session(), USER_ID, None, exact, None)
+
+    assert calls[1][2][0].name == "ok.pdf"
