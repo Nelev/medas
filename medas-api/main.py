@@ -1,3 +1,4 @@
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -17,11 +18,13 @@ from database.database import dispose_engine, get_session, init_engine
 from model import greeting_text, list_conversations
 from rag_pipeline.vector_store import init_vector_store
 from ratelimit import LIMITS, limiter
-from schema import NewMessage, NotFound
+from schema import AgentUnavailable, NewMessage, NotFound
 
 # Copies .env into os.environ for what reads it directly rather than through
 # a settings class -- the agent's OPENROUTER_API_KEY among them.
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -54,6 +57,12 @@ async def not_found(_: Request, exc: NotFound) -> JSONResponse:
     # One mapping for every route: a conversation that is someone else's is
     # only indistinguishable from a missing one if every route answers alike.
     return JSONResponse(status_code=404, content={"detail": exc.detail})
+
+
+@app.exception_handler(AgentUnavailable)
+async def agent_unavailable(_: Request, exc: AgentUnavailable) -> JSONResponse:
+    logger.error("agent call failed", exc_info=exc.__cause__)
+    return JSONResponse(status_code=503, content={"detail": "Assistant unavailable"})
 
 
 # No CORS middleware: the browser never calls this API directly. The UI's

@@ -6,6 +6,7 @@ and table definitions change for different reasons, so they stay apart.
 """
 
 from schema.schema import (
+    AgentUnavailable,
     Attachment,
     Chunk,
     ConversationNotFound,
@@ -18,6 +19,7 @@ from schema.schema import (
 )
 
 __all__ = [
+    "AgentUnavailable",
     "Attachment",
     "Chunk",
     "ConversationNotFound",

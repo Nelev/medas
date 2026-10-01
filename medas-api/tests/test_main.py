@@ -20,8 +20,10 @@ from sqlalchemy.exc import IntegrityError
 import controller.conversation
 import controller.documents
 from auth import current_user, greeting_name
+from controller.conversation import UNAVAILABLE_REPLY
 from database.database import get_session
 from main import app
+from schema import AgentUnavailable
 
 SERVER_VERSION = "18.0 (Debian 18.0-1)"
 
@@ -298,6 +300,26 @@ async def test_a_prose_reply_is_kept_as_the_answer(
 
     assert reply["text"] == AGENT_REPLY
     assert "severity" not in reply
+
+
+async def test_ask_when_the_agent_fails_is_503_and_keeps_a_reply(
+    client, fake_session, monkeypatch
+):
+    async def _fail(turns, *, record_id, attachments=()):
+        raise AgentUnavailable
+
+    monkeypatch.setattr(controller.conversation, "ask_agent", _fail)
+    fake_session._store("assistant", "Hi Mattia, how can I help you?")
+
+    response = await client.post(
+        "/ask",
+        params={"conversationId": uuid.uuid4()},
+        json={"role": "user", "text": "My chest hurts."},
+    )
+
+    assert response.status_code == 503
+    assert fake_session.committed
+    assert fake_session.stored[-1].content == UNAVAILABLE_REPLY
 
 
 async def test_ask_stores_the_question_and_the_answer(
