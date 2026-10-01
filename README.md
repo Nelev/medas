@@ -15,7 +15,7 @@ Every request to medas-api is made by the Next server. The browser only ever tal
 
 | Step          | Who calls                              | Call                                                            |
 | ------------- | -------------------------------------- | --------------------------------------------------------------- |
-| Page load     | The Next server, in a Server Component | `GET /` → the greeting, not persisted                           |
+| Page load     | The Next server, in a Server Component | `GET /` → the greeting turns, not persisted                     |
 | Every message | The Next server, in a Server Action    | `POST /ask[?conversationId=…]` → stores the turn and answers it |
 
 That is what keeps the API's origin out of the browser bundle, removes any need for CORS, and lets one build run in any environment.
@@ -145,15 +145,15 @@ Both suites are unit-only by design — no database, no API, no model, no browse
 
 ## API surface
 
-| Method | Path                           | Request          | Response                                                                                                                                                                                                                                            |
-| ------ | ------------------------------ | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`  | `/`                            | —                | `{messages: [{role, text}], conversations: [{conversation_id}]}` — the greeting, not persisted, and the user's live conversations, newest first                                                                                                     |
-| `POST` | `/ask[?conversationId=<uuid>]` | `{role, text}`   | `201 {conversation_id, messages}` — the turns this request added                                                                                                                                                                                    |
-| `GET`  | `/conversations/{id}`          | —                | `{conversation_id, messages}` — the whole history, oldest first                                                                                                                                                                                     |
-| `POST` | `/documents[?conversationId=]` | multipart `file` | `201 {conversation_id, messages}`, like `/ask`: a user turn `upload file requested: <file name>`, then the agent's answer (stored or refused), after the greeting when it started the conversation; `404` with no record or an unknown conversation |
-| `GET`  | `/health/db`                   | —                | `{status, server_version}`                                                                                                                                                                                                                          |
+| Method | Path                           | Request          | Response                                                                                                                                                                                                                                                |
+| ------ | ------------------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/`                            | —                | `{messages: [{role, text}], conversations: [{conversation_id}]}` — the greeting turns (who Medas is, what the patient can do: ask, upload a PDF, export the conversation, and a prompt), not persisted, and the user's live conversations, newest first |
+| `POST` | `/ask[?conversationId=<uuid>]` | `{role, text}`   | `201 {conversation_id, messages}` — the turns this request added                                                                                                                                                                                        |
+| `GET`  | `/conversations/{id}`          | —                | `{conversation_id, messages}` — the whole history, oldest first                                                                                                                                                                                         |
+| `POST` | `/documents[?conversationId=]` | multipart `file` | `201 {conversation_id, messages}`, like `/ask`: a user turn `upload file requested: <file name>`, then the agent's answer (stored or refused), after the greeting when it started the conversation; `404` with no record or an unknown conversation     |
+| `GET`  | `/health/db`                   | —                | `{status, server_version}`                                                                                                                                                                                                                              |
 
-`POST /ask` returns **what it added**, not the whole thread: three turns when it started the conversation (the greeting, the question, the answer) and two when it appended (the question and the answer). Either way the client appends them to what it already has.
+`POST /ask` returns **what it added**, not the whole thread: five turns when it started the conversation (the three greeting turns, the question, the answer) and two when it appended (the question and the answer). Either way the client appends them to what it already has.
 
 **Agent failures.** If the model cannot be reached or does not answer, `/ask` and `/documents` return `503`. The user's turn is already stored, so the API stores a short apology as the assistant's turn beside it; it shows when the conversation is next loaded.
 

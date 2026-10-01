@@ -23,6 +23,7 @@ from auth import current_user, greeting_name
 from controller.conversation import UNAVAILABLE_REPLY
 from database.database import get_session
 from main import app
+from model import greeting_texts
 from schema import AgentUnavailable
 
 SERVER_VERSION = "18.0 (Debian 18.0-1)"
@@ -32,9 +33,9 @@ SERVER_VERSION = "18.0 (Debian 18.0-1)"
 USER_ID = uuid.UUID("7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0")
 NEW_MESSAGE = {"role": "user", "text": "What is my last episode?"}
 
-# Who the greeting addresses unless a test names someone: the client is an
+# The assistant's opening turns unless a test names someone: the client is an
 # account without a first name.
-SEEDED_NAME = "there"
+GREETING = greeting_texts(None)
 
 # An arbitrary fixed instant for the stored rows. Fixed, so a timestamp
 # assertion fails for a real reason rather than a slow test.
@@ -174,7 +175,9 @@ async def test_root_greets_the_user(client, fake_session):
 
     assert response.status_code == 200
     assert response.json() == {
-        "messages": [{"role": "assistant", "text": "Hi mattia, how can I help you?"}],
+        "messages": [
+            {"role": "assistant", "text": text} for text in greeting_texts("mattia")
+        ],
         "conversations": [],
     }
 
@@ -198,9 +201,8 @@ async def test_root_lists_the_users_conversations(client, fake_session):
 async def test_root_without_a_name_greets_there(client, fake_session):
     response = await client.get("/")
 
-    assert response.json()["messages"][0]["text"] == (
-        f"Hi {SEEDED_NAME}, how can I help you?"
-    )
+    assert [m["text"] for m in response.json()["messages"]] == GREETING
+    assert GREETING[0].startswith("Hi there,")
 
 
 # What the stubbed agent answers with. Text, because that is what the agent
@@ -507,9 +509,11 @@ async def test_ask_without_an_id_seeds_the_greeting_then_the_first_message(
     body = response.json()
     # The id is the whole point: the client needs it for every later message.
     assert body["conversation_id"] == str(fake_session.conversation_id)
-    greeting, first, answer = body["messages"]
-    assert greeting["role"] == "assistant"
-    assert greeting["text"] == f"Hi {SEEDED_NAME}, how can I help you?"
+    *greetings, first, answer = body["messages"]
+    assert [(m["role"], m["text"]) for m in greetings] == [
+        ("assistant", text) for text in GREETING
+    ]
+    greeting = greetings[-1]
     assert (first["role"], first["text"]) == ("user", NEW_MESSAGE["text"])
     # And the agent's reply to it.
     assert (answer["role"], answer["text"]) == ("assistant", AGENT_REPLY)
@@ -545,7 +549,7 @@ async def test_the_first_turn_is_answered_knowing_the_greeting(
 
     assert stub_the_agent == [
         [
-            {"role": "assistant", "content": f"Hi {SEEDED_NAME}, how can I help you?"},
+            *[{"role": "assistant", "content": text} for text in GREETING],
             {"role": "user", "content": NEW_MESSAGE["text"]},
         ]
     ]
@@ -560,10 +564,12 @@ async def test_seeded_greeting_is_the_one_previewed(client, fake_session):
     previewed = await client.get("/")
     created = await client.post("/ask", json=NEW_MESSAGE)
 
-    stored = created.json()["messages"][0]
-    preview = previewed.json()["messages"][0]
-    assert (stored["role"], stored["text"]) == (preview["role"], preview["text"])
-    assert stored["text"] == "Hi Ada, how can I help you?"
+    previewed_turns = previewed.json()["messages"]
+    stored = created.json()["messages"][: len(previewed_turns)]
+    assert [(m["role"], m["text"]) for m in stored] == [
+        (m["role"], m["text"]) for m in previewed_turns
+    ]
+    assert stored[0]["text"].startswith("Hi Ada,")
 
 
 async def test_ask_without_an_id_for_an_unknown_user_is_404(client, fake_session):
@@ -649,7 +655,7 @@ async def test_an_upload_starts_a_conversation(
     body = response.json()
     assert body["conversation_id"] == str(fake_session.conversation_id)
     assert [(m["role"], m["text"]) for m in body["messages"]] == [
-        ("assistant", f"Hi {SEEDED_NAME}, how can I help you?"),
+        *[("assistant", text) for text in GREETING],
         ("user", "upload file requested: record.pdf"),
         ("assistant", AGENT_REPLY),
     ]
@@ -783,13 +789,13 @@ async def test_read_conversation_returns_the_whole_history(client, fake_session)
     body = response.json()
     assert body["conversation_id"] == conversation_id
     assert [m["text"] for m in body["messages"]] == [
-        f"Hi {SEEDED_NAME}, how can I help you?",
+        *GREETING,
         NEW_MESSAGE["text"],
         AGENT_REPLY,
     ]
     # Metadata still comes back merged into the message, the shape it had when
     # it lived in the array -- there is simply nothing in it to merge.
-    assert body["messages"][2].keys() == {"role", "text", "message_id", "timestamp"}
+    assert body["messages"][-1].keys() == {"role", "text", "message_id", "timestamp"}
 
 
 async def test_read_a_missing_or_deleted_conversation_is_404(client, fake_session):

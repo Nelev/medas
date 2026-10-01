@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth import CurrentUser, GreetingName, get_auth_settings
 from controller import ask_question, get_conversation, index_upload
 from database.database import dispose_engine, get_session, init_engine
-from model import greeting_text, list_conversations
+from model import greeting_texts, list_conversations
 from rag_pipeline.vector_store import init_vector_store
 from ratelimit import LIMITS, READ_LIMITS, limiter
 from schema import AgentUnavailable, NewMessage, NotFound
@@ -81,7 +81,9 @@ async def init_user_profile(
     # in or nothing, like every other route here.
     conversations = await list_conversations(session, user_id)
     return {
-        "messages": [{"role": "assistant", "text": greeting_text(name)}],
+        "messages": [
+            {"role": "assistant", "text": text} for text in greeting_texts(name)
+        ],
         "conversations": [{"conversation_id": c} for c in conversations],
     }
 

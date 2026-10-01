@@ -121,7 +121,7 @@ def greeting_name(
     session token (Sessions -> Customize session token). Signed by Clerk like
     the rest of the token, and read locally -- no call to Clerk. Not who is
     asking: that is clerk_user_id. None for an account without a first name,
-    or an instance without the claim configured; greeting_text decides what
+    or an instance without the claim configured; greeting_texts decides what
     the greeting says then.
     """
     name = claims.get("first_name")

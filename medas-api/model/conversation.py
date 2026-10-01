@@ -13,7 +13,7 @@ from model.message import MessageRole, add_messages
 __all__ = [
     "Conversation",
     "create_conversation",
-    "greeting_text",
+    "greeting_texts",
     "list_conversations",
 ]
 
@@ -55,13 +55,23 @@ _LIST = text(
 )
 
 
-def greeting_text(name: str | None) -> str:
-    """The assistant's opening line, "Hi there" without a name.
+def greeting_texts(name: str | None) -> list[str]:
+    """The assistant's opening turns: who it is, what the patient can do, and
+    a prompt. "Hi there" without a name.
 
     Shared, so the copy the UI renders before a conversation exists and the
-    copy stored as its first message cannot drift apart.
+    copy stored as its first messages cannot drift apart. Plain text: the
+    chat does not render markdown, so the options are a sentence, not a list.
     """
-    return f"Hi {name or 'there'}, how can I help you?"
+    return [
+        f"Hi {name or 'there'}, I'm Medas. I answer questions about your own "
+        "medical record.",
+        "You can ask me about your conditions, medications, test results or "
+        "history. You can upload a PDF with the paperclip button and I'll add "
+        "it to your record if it checks out. And you can ask me to export this "
+        "conversation as a PDF.",
+        "Where would you like to start?",
+    ]
 
 
 async def create_conversation(
@@ -71,7 +81,7 @@ async def create_conversation(
     role: str,
     message_text: str,
 ) -> tuple[uuid.UUID, list[dict]]:
-    """Start a conversation, seeded with the greeting and the first message.
+    """Start a conversation, seeded with the greeting turns and the first message.
 
     Two statements, because the messages reference a conversation that does
     not exist yet. Folding both into one data-modifying CTE would work -- the
@@ -93,7 +103,7 @@ async def create_conversation(
         session,
         conversation_id,
         [
-            (MessageRole.ASSISTANT, greeting_text(name), None),
+            *[(MessageRole.ASSISTANT, t, None) for t in greeting_texts(name)],
             (role, message_text, None),
         ],
         user_id=user_id,
