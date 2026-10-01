@@ -8,6 +8,7 @@ import pytest
 
 from auth import get_auth_settings
 from database.settings import DbSettings, get_settings
+from ratelimit import limiter
 
 
 @pytest.fixture(autouse=True)
@@ -49,3 +50,15 @@ def _no_real_clerk_key(monkeypatch):
     monkeypatch.setenv("CLERK_SECRET_KEY", "sk_test_placeholder")
     monkeypatch.delenv("CLERK_JWT_KEY", raising=False)
     monkeypatch.delenv("CLERK_AUTHORIZED_PARTIES", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Empty the limiter's counters, which live in process memory.
+
+    Without this the 10/minute cap is spent across the whole suite and later
+    tests get a 429.
+    """
+    limiter.reset()
+    yield
+    limiter.reset()

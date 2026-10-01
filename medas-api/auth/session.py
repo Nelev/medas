@@ -19,7 +19,7 @@ from clerk_backend_api.security import (
 )
 from clerk_backend_api.security.machine import get_token_type
 from clerk_backend_api.security.types import TokenType
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -61,6 +61,7 @@ def _unauthorized(detail: str) -> HTTPException:
 async def session_claims(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
     settings: Annotated[AuthSettings, Depends(get_auth_settings)],
+    request: Request,
 ) -> dict[str, Any]:
     """The claims of the request's session token, once it has verified."""
     if credentials is None:
@@ -98,6 +99,9 @@ async def session_claims(
     if not payload.get("sid") or not isinstance(subject, str) or not subject:
         raise _unauthorized("Not a session token")
 
+    # For the rate limiter, which keys on the verified user and sees only the
+    # request.
+    request.state.user_key = subject
     return payload
 
 

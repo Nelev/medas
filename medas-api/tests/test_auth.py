@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
+from starlette.requests import Request
 
 import auth.session
 from auth.session import (
@@ -76,12 +77,16 @@ def sign(signing_key):
     return _sign
 
 
+def request() -> Request:
+    return Request({"type": "http", "headers": []})
+
+
 def bearer(token: str) -> HTTPAuthorizationCredentials:
     return HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
 
 
 async def test_a_valid_session_token_names_its_user(settings, sign):
-    claims = await session_claims(bearer(sign()), settings)
+    claims = await session_claims(bearer(sign()), settings, request())
 
     assert clerk_user_id(claims) == CLERK_ID
 
@@ -106,7 +111,7 @@ def test_the_greeting_addresses_the_first_name_claim(claims, name):
 
 async def test_no_token_is_401_with_a_bearer_challenge(settings):
     with pytest.raises(HTTPException) as caught:
-        await session_claims(None, settings)
+        await session_claims(None, settings, request())
 
     assert caught.value.status_code == 401
     assert caught.value.headers == {"WWW-Authenticate": "Bearer"}
@@ -135,7 +140,7 @@ async def test_no_token_is_401_with_a_bearer_challenge(settings):
 )
 async def test_a_token_that_fails_verification_is_401(settings, sign, make_token):
     with pytest.raises(HTTPException) as caught:
-        await session_claims(bearer(make_token(sign)), settings)
+        await session_claims(bearer(make_token(sign)), settings, request())
 
     assert caught.value.status_code == 401
 
@@ -144,7 +149,7 @@ async def test_a_token_that_fails_verification_is_401(settings, sign, make_token
 async def test_a_verified_token_without_a_session_or_user_is_401(settings, sign, claim):
     # Good signature, not a session token: nothing here to answer for.
     with pytest.raises(HTTPException) as caught:
-        await session_claims(bearer(sign(**{claim: None})), settings)
+        await session_claims(bearer(sign(**{claim: None})), settings, request())
 
     assert caught.value.status_code == 401
 
@@ -160,7 +165,7 @@ async def test_machine_tokens_are_refused_without_asking_clerk(
     monkeypatch.setattr(auth.session, "verify_token_async", _must_not_run)
 
     with pytest.raises(HTTPException) as caught:
-        await session_claims(bearer(f"{prefix}secret"), settings)
+        await session_claims(bearer(f"{prefix}secret"), settings, request())
 
     assert caught.value.status_code == 401
 
