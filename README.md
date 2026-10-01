@@ -176,6 +176,18 @@ The model is `openai/gpt-4.1-mini`, named in [`langchain_agent/agent.py`](medas-
 
 Even so the model sometimes answers in prose — most often on a red flag, where it drops the format and writes the warning out directly. That reply is a good answer, so the route keeps it and shows it as it stands; only the triage code is lost with it, and the turn renders without a badge.
 
+### How json-render is used
+
+[json-render](https://json-render.dev) lets the model describe a layout as plain JSON that the UI draws with real components, so an answer can be a table or an alert instead of only a paragraph. Here it carries the optional `ui` field of the reply. The model never writes markup or code; it writes data, and the UI decides whether and how to draw it.
+
+1. **The prompt teaches the model the vocabulary.** The `## Display (ui)` section of [`assistant_general_prompt.py`](medas-api/langchain_agent/assistant_general_prompt.py) maps what an answer contains to a component (a list of attributes to `Table`, a warning to `Alert`, a status to `Badge`, a measured value to `Progress`, and so on), with worked examples and rules: a flat tree of at most twelve elements, warnings first, a lone `Alert` at `S1`, and `null` when prose is enough. Every cell and number must come from the retrieved record, like the message itself.
+2. **The model returns a spec.** A spec is `{"root": "<id>", "elements": {"<id>": {"type", "props", "children": [ids]}}}`: a flat map of elements that refer to each other by id.
+3. **The API stores it untouched.** `parse_agent_reply` in [`utils.py`](medas-api/utils.py) keeps `ui` as given, in the message's metadata beside `severity` and `confidence`, and returns it on the assistant turn. The API does not validate it: the catalog lives in the UI, and keeping a copy in Python would only drift.
+4. **The UI validates, then draws.** [`reply-ui.tsx`](medas-ui/components/chat/reply-ui.tsx) defines a catalog with `defineCatalog` from `@json-render/core` and a matching registry with `defineRegistry` from `@json-render/react`, both built from the shadcn set in `@json-render/shadcn`. `ReplyUI` runs `catalog.validate(spec)` (memoised on the spec) and renders only what validation parsed, through `Renderer` inside a `JSONUIProvider`. `chat-message.tsx` mounts it under the message text.
+5. **Failure is invisible, not broken.** A spec that names an unknown component or has bad props fails validation and `ReplyUI` renders nothing. The message text is always shown, so a dropped layout loses nothing.
+
+**The catalog is an allow-list, and it is a security boundary.** The spec is model output derived from a record that can carry injected text, so only read-only display components are registered: `Card`, `Stack`, `Grid`, `Separator`, `Collapsible`, `Accordion`, `Table`, `Heading`, `Text`, `Badge`, `Alert`, `Progress`, with `actions: {}`. `Image`, `Avatar` and `Link` are left out because they load or follow a URL the model chose; forms, buttons, dialogs and menus because the reply has no actions or state to bind them to; `Tabs` because it needs bound state; `Carousel` because it does not suit a chat bubble. Two things must stay in step when the set changes: the catalog and registry in `reply-ui.tsx`, and the component table in the prompt. `globals.css` also adds an `@source` line for `@json-render/shadcn/dist`, because Tailwind skips `node_modules` and would otherwise drop the library's classes.
+
 ### Data model
 
 `users` — id, email, role, timestamps.
