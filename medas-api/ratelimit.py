@@ -19,4 +19,8 @@ def rate_limit_key(request: Request) -> str:
 # path, so /conversations/{id} would get a fresh bucket for every id.
 limiter = Limiter(key_func=rate_limit_key, key_style="endpoint")
 
+# The routes that call the model or index a file are billable and get the
+# tight limit; reads only query Postgres and get a looser one, so clicking
+# through the sidebar does not trip it.
 LIMITS = "10/minute;200/day"
+READ_LIMITS = "60/minute;2000/day"

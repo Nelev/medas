@@ -6,7 +6,7 @@ import httpx
 import pytest
 from starlette.requests import Request
 
-from auth import current_user
+from auth import current_user, greeting_name
 from database.database import get_session
 from main import app
 from ratelimit import rate_limit_key
@@ -27,8 +27,13 @@ async def client(monkeypatch):
     async def no_messages(*_):
         return []
 
+    async def an_answer(*_):
+        return uuid.uuid4(), []
+
     monkeypatch.setattr("main.get_conversation", no_messages)
+    monkeypatch.setattr("main.ask_question", an_answer)
     app.dependency_overrides[current_user] = signed_in_as_header
+    app.dependency_overrides[greeting_name] = lambda: None
     app.dependency_overrides[get_session] = lambda: None
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
@@ -36,11 +41,11 @@ async def client(monkeypatch):
     app.dependency_overrides.clear()
 
 
-async def test_the_eleventh_request_in_a_minute_is_429(client):
+async def test_the_eleventh_ask_in_a_minute_is_429(client):
     statuses = [
         (
-            await client.get(
-                "/conversations/" + str(uuid.uuid4()), headers=as_user("u1")
+            await client.post(
+                "/ask", json={"role": "user", "text": "hi"}, headers=as_user("u1")
             )
         ).status_code
         for _ in range(11)
@@ -49,12 +54,26 @@ async def test_the_eleventh_request_in_a_minute_is_429(client):
     assert 429 not in statuses[:10]
 
 
+async def test_reads_allow_more_than_ten_a_minute(client):
+    statuses = [
+        (
+            await client.get(
+                "/conversations/" + str(uuid.uuid4()), headers=as_user("u1")
+            )
+        ).status_code
+        for _ in range(60)
+    ]
+    assert 429 not in statuses
+
+
 async def test_each_user_has_their_own_bucket(client):
+    body = {"role": "user", "text": "hi"}
     for _ in range(10):
-        await client.get("/conversations/" + str(uuid.uuid4()), headers=as_user("u1"))
-    other = await client.get(
-        "/conversations/" + str(uuid.uuid4()), headers=as_user("u2")
-    )
+        await client.post("/ask", json=body, headers=as_user("u1"))
+    assert (
+        await client.post("/ask", json=body, headers=as_user("u1"))
+    ).status_code == 429
+    other = await client.post("/ask", json=body, headers=as_user("u2"))
     assert other.status_code != 429
 
 
