@@ -6,6 +6,8 @@ from typing import Annotated
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Request, UploadFile
 from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +16,7 @@ from controller import ask_question, get_conversation, index_upload
 from database.database import dispose_engine, get_session, init_engine
 from model import greeting_text, list_conversations
 from rag_pipeline.vector_store import init_vector_store
+from ratelimit import LIMITS, limiter
 from schema import NewMessage, NotFound
 
 # Copies .env into os.environ for what reads it directly rather than through
@@ -42,6 +45,9 @@ app = FastAPI(lifespan=lifespan)
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 
 @app.exception_handler(NotFound)
 async def not_found(_: Request, exc: NotFound) -> JSONResponse:
@@ -56,8 +62,9 @@ async def not_found(_: Request, exc: NotFound) -> JSONResponse:
 
 
 @app.get("/")
+@limiter.limit(LIMITS)
 async def init_user_profile(
-    user_id: CurrentUser, session: SessionDep, name: GreetingName
+    request: Request, user_id: CurrentUser, session: SessionDep, name: GreetingName
 ):
     # The greeting is not persisted: it is the preview shown before the user
     # says anything, and the stored copy is seeded by POST /ask from the same
@@ -71,7 +78,9 @@ async def init_user_profile(
 
 
 @app.post("/ask", status_code=201)
+@limiter.limit(LIMITS)
 async def ask(
+    request: Request,
     message: NewMessage,
     user_id: CurrentUser,
     session: SessionDep,
@@ -93,15 +102,21 @@ async def ask(
 
 
 @app.get("/conversations/{conversation_id}")
+@limiter.limit(LIMITS)
 async def read_conversation(
-    conversation_id: uuid.UUID, user_id: CurrentUser, session: SessionDep
+    request: Request,
+    conversation_id: uuid.UUID,
+    user_id: CurrentUser,
+    session: SessionDep,
 ):
     messages = await get_conversation(session, user_id, conversation_id)
     return {"conversation_id": conversation_id, "messages": messages}
 
 
 @app.post("/documents", status_code=201)
+@limiter.limit(LIMITS)
 async def upload_document(
+    request: Request,
     file: UploadFile,
     user_id: CurrentUser,
     session: SessionDep,
@@ -120,6 +135,7 @@ async def upload_document(
 
 
 @app.get("/health/db")
-async def health_db(session: SessionDep):
+@limiter.limit(LIMITS)
+async def health_db(request: Request, session: SessionDep):
     version = await session.scalar(text("SHOW server_version"))
     return {"status": "ok", "server_version": version}
