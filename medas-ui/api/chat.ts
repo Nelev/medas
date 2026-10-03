@@ -120,4 +120,3 @@ const getConversation = async (conversationId: string): Promise<AskResult> => {
 }
 
 export { ask, getConversation, uploadPdf }
-export type { AskResult, StoredMessage }
