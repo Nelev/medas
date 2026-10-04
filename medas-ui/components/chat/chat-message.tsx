@@ -1,11 +1,18 @@
 import { Stethoscope, User } from "lucide-react"
-import type { ComponentProps, ReactNode } from "react"
+import dynamic from "next/dynamic"
+import { memo, type ComponentProps, type ReactNode } from "react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Bubble, BubbleContent } from "@/components/ui/bubble"
 import { Message, MessageAvatar, MessageContent } from "@/components/ui/message"
-import { ReplyUI } from "@/components/chat/reply-ui"
 import { ChatMessageProps, ChatRole, Severity } from "@/model/ChatMessage"
+
+// Loaded on first use: most replies are plain text, and the spec renderer
+// pulls in json-render and its shadcn set, which a chat of plain answers
+// never needs.
+const ReplyUI = dynamic(() =>
+  import("@/components/chat/reply-ui").then((m) => m.ReplyUI),
+)
 
 // Straight from the prompt's table, shortened to fit a chip. The code is
 // shown alongside, so the word is a gloss rather than the only signal.
@@ -17,7 +24,14 @@ const SEVERITY_LABEL: Record<Severity, string> = {
   S5: "informational",
 }
 
-export function ChatMessage({ role, text, severity, ui }: ChatMessageProps) {
+// Memoised: the list re-renders on every store update, and a row's props
+// (strings and a spec kept by reference) rarely change.
+export const ChatMessage = memo(function ChatMessage({
+  role,
+  text,
+  severity,
+  ui,
+}: ChatMessageProps) {
   // The one case the accent colour is spent on: an answer that says go now.
   const isUrgent = severity === "S1"
 
@@ -53,7 +67,7 @@ export function ChatMessage({ role, text, severity, ui }: ChatMessageProps) {
       {text}
     </MessageRow>
   )
-}
+})
 
 interface MessageRowProps extends Omit<
   ComponentProps<typeof BubbleContent>,

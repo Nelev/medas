@@ -5,6 +5,8 @@ export type ChatRole = "user" | "assistant"
 export type Severity = "S1" | "S2" | "S3" | "S4" | "S5"
 
 export interface ChatMessageProps {
+  // Minted by the API; absent on the greeting and on a message not yet sent.
+  message_id?: string
   role: ChatRole
   text: string
   severity?: Severity

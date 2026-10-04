@@ -51,7 +51,7 @@ export function ChatMessages({ initialMessages }: ChatMessagesProps) {
     >
       {list.map((message, index) => (
         <ChatMessage
-          key={index}
+          key={message.message_id ?? `turn-${index}`}
           role={message.role}
           text={message.text}
           severity={message.severity}
