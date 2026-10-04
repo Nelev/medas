@@ -1,4 +1,3 @@
-import type { ChatMessageProps } from "@/model/ChatMessage"
 import type { ConversationSummary } from "@/model/Conversation"
 
 // The shapes medas-api actually returns. Kept in one place so a change to the
@@ -77,8 +76,6 @@ const jsonResponse = (body: unknown, status = 200) =>
     json: async () => body,
   }) as Response
 
-const asChatMessage = (message: ChatMessageProps) => message
-
 export {
   CONVERSATION_ID,
   greeting,
@@ -91,5 +88,4 @@ export {
   conversationList,
   initResponse,
   jsonResponse,
-  asChatMessage,
 }
