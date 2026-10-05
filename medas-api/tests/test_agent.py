@@ -52,7 +52,7 @@ async def test_answer_runs_the_graph_with_the_callers_record(monkeypatch):
     class _Graph:
         async def ainvoke(self, state, *, context):
             invoked.append((state, context))
-            return {"messages": [SimpleNamespace(content="reply")]}
+            return {"messages": [SimpleNamespace(type="ai", content="reply")]}
 
     monkeypatch.setattr(agent, "build_agent", _Graph)
     messages = [{"role": "user", "content": "Can I take ibuprofen?"}]
@@ -67,7 +67,7 @@ async def test_answer_hands_the_attachments_to_the_tools(monkeypatch):
     class _Graph:
         async def ainvoke(self, state, *, context):
             invoked.append(context)
-            return {"messages": [SimpleNamespace(content="reply")]}
+            return {"messages": [SimpleNamespace(type="ai", content="reply")]}
 
     monkeypatch.setattr(agent, "build_agent", _Graph)
 
