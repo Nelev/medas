@@ -39,3 +39,7 @@ htmlcov/
 # Node, for a dev server or tool run from the root rather than inside medas-ui.
 node_modules/
 *.tsbuildinfo
+
+# third-party agent skill packs
+.agents/
+.claude/skills/
