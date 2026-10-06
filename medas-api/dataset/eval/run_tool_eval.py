@@ -12,11 +12,10 @@ from collections import defaultdict
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage
 
-import langchain_agent.agent as agent_module
+import langchain_agent.tools as tools_module
 from dataset.eval.common import HERE, error_text
 from dataset.eval.tool_cases import RECORD_ID, test_cases
 from langchain_agent.agent import build_agent
-from schema import RecordContext
 
 RECURSION_LIMIT = 12
 
@@ -61,8 +60,11 @@ async def _run_case(i: int, case: dict, agent) -> dict:
     print(f"[{i + 1}/{len(test_cases)}] {case['query'][:60]}...")
     try:
         response = await agent.ainvoke(
-            {"messages": [{"role": "user", "content": case["query"]}]},
-            context=RecordContext(RECORD_ID, tuple(case["attachments"])),
+            {
+                "messages": [{"role": "user", "content": case["query"]}],
+                "record_id": RECORD_ID,
+                "attachments": tuple(case["attachments"]),
+            },
             config={"recursion_limit": RECURSION_LIMIT},
         )
     except Exception as exc:
@@ -88,9 +90,9 @@ async def _run_case(i: int, case: dict, agent) -> dict:
 
 
 async def main() -> None:
-    agent_module.search_record = _search_record
-    agent_module.add_document = _add_document
-    agent_module.export_turns = _export_turns
+    tools_module.search_record = _search_record
+    tools_module.add_document = _add_document
+    tools_module.export_turns = _export_turns
     agent = build_agent()
 
     results = [await _run_case(i, case, agent) for i, case in enumerate(test_cases)]

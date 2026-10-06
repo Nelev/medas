@@ -14,7 +14,6 @@ __all__ = [
     "NewMessage",
     "NotAPdf",
     "NotFound",
-    "RecordContext",
     "RecordNotFound",
     "Rejected",
     "UserNotFound",
@@ -100,13 +99,3 @@ class Attachment:
 
     name: str
     content: bytes
-
-
-@dataclass(frozen=True)
-class RecordContext:
-    """Per-run data for the tools, passed at invoke time, never by the model."""
-
-    record_id: str
-    # The PDFs sent with this question, the only ones the document tools can
-    # reach: the model names one, it cannot supply one.
-    attachments: tuple[Attachment, ...] = ()

@@ -14,8 +14,8 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 
 import langchain_agent.export as export
-from langchain_agent.agent import export_conversation
-from schema import RecordContext
+from langchain_agent.state import RecordState
+from langchain_agent.tools import export_conversation
 
 RECORD_ID = "pat_1"
 
@@ -61,16 +61,16 @@ async def _ask_for_export(args: dict):
         )
     )
     agent = create_agent(
-        model=model, tools=[export_conversation], context_schema=RecordContext
+        model=model, tools=[export_conversation], state_schema=RecordState
     )
     return await agent.ainvoke(
         {
             "messages": [
                 *TURNS,
                 {"role": "user", "content": "export this conversation"},
-            ]
+            ],
+            "record_id": RECORD_ID,
         },
-        context=RecordContext(RECORD_ID),
     )
 
 

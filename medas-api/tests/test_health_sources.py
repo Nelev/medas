@@ -7,6 +7,7 @@ import httpx
 
 import langchain_agent.agent as agent
 import langchain_agent.health_sources as sources
+import langchain_agent.tools as tools
 
 MEDLINEPLUS_XML = """<nlmSearchResult><list>
 <document rank="0" url="https://medlineplus.gov/painrelievers.html">
@@ -86,7 +87,7 @@ async def test_pubmed_with_no_hits_makes_no_second_call(monkeypatch):
 
 
 def test_the_model_can_only_pass_a_query():
-    for tool in (agent.search_medlineplus, agent.search_pubmed):
+    for tool in (tools.search_medlineplus, tools.search_pubmed):
         schema = tool.tool_call_schema.model_json_schema()
 
         assert set(schema["properties"]) == {"query"}
@@ -98,7 +99,7 @@ async def test_a_source_outage_is_reported_to_the_model(monkeypatch):
 
     monkeypatch.setattr(sources, "search_pubmed", _down)
 
-    reply = await agent.search_pubmed.coroutine("anything")
+    reply = await tools.search_pubmed.coroutine("anything")
 
     assert json.loads(reply) == {"error": "source unavailable"}
 

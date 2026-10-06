@@ -34,7 +34,6 @@ from langchain_agent.agent import MODEL_NAME, build_agent
 from rag_pipeline.pdf import doc_prefix
 from rag_pipeline.record import MEDICAL_HISTORY_PATH
 from rag_pipeline.vector_store import get_embeddings, init_vector_store
-from schema import RecordContext
 
 DATASET = HERE.parent
 
@@ -92,8 +91,10 @@ async def _ask(question: str, record_id: str) -> dict:
     """
     try:
         result = await build_agent().ainvoke(
-            {"messages": [{"role": "user", "content": question}]},
-            context=RecordContext(record_id),
+            {
+                "messages": [{"role": "user", "content": question}],
+                "record_id": record_id,
+            },
             config={"recursion_limit": RECURSION_LIMIT},
         )
     except Exception as exc:
