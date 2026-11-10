@@ -20,6 +20,7 @@ from model import greeting_texts, list_conversations
 from rag_pipeline.vector_store import init_vector_store
 from ratelimit import LIMITS, READ_LIMITS, limiter
 from schema import AgentUnavailable, FileTooLarge, NewMessage, NotAPdf, NotFound
+from tracing import TracingMiddleware, start_tracing, stop_tracing
 
 # Copies .env into os.environ for what reads it directly rather than through
 # a settings class -- the agent's OPENROUTER_API_KEY among them.
@@ -39,13 +40,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         await conn.execute(text("SELECT 1"))
     # Likewise a missing record_chunks table (migrations not run) fails here.
     await init_vector_store(engine)
+    # Does nothing unless OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is set.
+    start_tracing()
 
     yield
 
+    stop_tracing()
     await dispose_engine()
 
 
 app = FastAPI(lifespan=lifespan)
+# Agent runs made while serving a request are traced, when tracing is on.
+app.add_middleware(TracingMiddleware)
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 

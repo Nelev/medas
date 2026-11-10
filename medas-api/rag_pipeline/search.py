@@ -6,9 +6,24 @@ worth looking up, and in its own wording.
 
 from typing import Any
 
+from langchain_core.documents import Document
+from langchain_core.runnables import RunnableLambda
+
 from rag_pipeline.vector_store import get_vector_store
 
 __all__ = ["search_record"]
+
+
+async def _nearest(request: dict[str, Any]) -> list[tuple[Document, float]]:
+    return await get_vector_store().asimilarity_search_with_score(
+        request["query"], k=request["k"], filter={"patient_id": request["patient_id"]}
+    )
+
+
+# The search runs as a step with a name, so that tracing, when it is on, sees
+# the retrieval as a span of its own: how long it took and how many passages
+# came back (tracing/handler.py). With no tracer it is a plain call.
+_retrieval = RunnableLambda(_nearest, name="retrieval record_chunks")
 
 
 async def search_record(
@@ -26,8 +41,8 @@ async def search_record(
     """
     # Embeds the query with the corpus's model, then runs the search, both
     # awaited so neither blocks the event loop behind it.
-    results = await get_vector_store().asimilarity_search_with_score(
-        query, k=n_results, filter={"patient_id": patient_id}
+    results = await _retrieval.ainvoke(
+        {"query": query, "k": n_results, "patient_id": patient_id}
     )
     return [
         {"chunk_id": doc.id, "text": doc.page_content, "distance": float(distance)}
