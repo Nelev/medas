@@ -6,6 +6,8 @@ the export, so the graph, the tool and the file are the real ones.
 
 import csv
 import json
+import uuid
+from contextlib import asynccontextmanager
 
 import pdfplumber
 import pytest
@@ -14,14 +16,24 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 
 import langchain_agent.export as export
-from langchain_agent.agent import export_conversation
-from schema import RecordContext
+import langchain_agent.tools as tools
+from langchain_agent.state import RecordState
+from langchain_agent.tools import export_conversation
 
 RECORD_ID = "pat_1"
+USER_ID = uuid.uuid4()
+CONVERSATION_ID = uuid.uuid4()
 
 TURNS = [
     {"role": "user", "content": "Can I take ibuprofen?"},
     {"role": "assistant", "content": "Your record lists an allergy."},
+]
+
+# The same turns as the messages table returns them, and the question that
+# asks for the export, which the controller has already stored.
+STORED = [
+    {"role": m["role"], "text": m["content"]}
+    for m in [*TURNS, {"role": "user", "content": "export this conversation"}]
 ]
 
 
@@ -36,6 +48,24 @@ def exports(tmp_path, monkeypatch):
     return tmp_path
 
 
+@pytest.fixture(autouse=True)
+def stored(monkeypatch) -> list:
+    """Stand in for the messages table; returns the reads made of it."""
+    reads = []
+
+    @asynccontextmanager
+    async def _open_session():
+        yield "session"
+
+    async def _list_messages(session, conversation_id, *, user_id):
+        reads.append((session, conversation_id, user_id))
+        return STORED
+
+    monkeypatch.setattr(tools, "open_session", _open_session)
+    monkeypatch.setattr(tools, "list_messages", _list_messages)
+    return reads
+
+
 def _text(path) -> str:
     with pdfplumber.open(path) as pdf:
         return "\n".join(page.extract_text() for page in pdf.pages)
@@ -46,7 +76,7 @@ def _export(turns, fmt):
     return export.EXPORT_DIR / name, used
 
 
-async def _ask_for_export(args: dict):
+async def _ask_for_export(args: dict, *, ids: bool = True, middleware=()):
     model = ScriptedModel(
         messages=iter(
             [
@@ -61,16 +91,20 @@ async def _ask_for_export(args: dict):
         )
     )
     agent = create_agent(
-        model=model, tools=[export_conversation], context_schema=RecordContext
+        model=model,
+        tools=[export_conversation],
+        state_schema=RecordState,
+        middleware=list(middleware),
     )
     return await agent.ainvoke(
         {
             "messages": [
                 *TURNS,
                 {"role": "user", "content": "export this conversation"},
-            ]
+            ],
+            "record_id": RECORD_ID,
+            **({"user_id": USER_ID, "conversation_id": CONVERSATION_ID} if ids else {}),
         },
-        context=RecordContext(RECORD_ID),
     )
 
 
@@ -97,6 +131,32 @@ async def test_asking_for_a_pdf_exports_this_conversation(exports):
     assert "Your record lists an allergy." in text
     assert "export this conversation" in text
     assert result["messages"][-1].content == "Your file is ready."
+
+
+async def test_the_conversation_is_read_as_the_run_user(exports, stored):
+    await _ask_for_export({})
+
+    assert stored == [("session", CONVERSATION_ID, USER_ID)]
+
+
+async def test_a_run_with_no_conversation_exports_nothing(exports, stored):
+    result = await _ask_for_export({}, ids=False)
+
+    assert json.loads(result["messages"][-2].content) == {"status": "no conversation"}
+    assert list(exports.iterdir()) == []
+    assert stored == []
+
+
+async def test_a_conversation_that_is_gone_exports_nothing(exports, monkeypatch):
+    async def _none(session, conversation_id, *, user_id):
+        return []
+
+    monkeypatch.setattr(tools, "list_messages", _none)
+
+    result = await _ask_for_export({})
+
+    assert json.loads(result["messages"][-2].content) == {"status": "no conversation"}
+    assert list(exports.iterdir()) == []
 
 
 async def test_the_tool_reports_the_format_it_used(exports):

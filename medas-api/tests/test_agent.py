@@ -6,17 +6,16 @@ the tool runs.
 """
 
 import json
+import uuid
 from types import SimpleNamespace
 
 import pytest
 
 import langchain_agent.agent as agent
-from langchain_agent.agent import (
-    add_patient_document,
-    answer,
-    search_patient_record,
-)
-from schema import Attachment, RecordContext, Rejected
+import langchain_agent.tools as tools
+from langchain_agent.agent import answer
+from langchain_agent.tools import add_patient_document, search_patient_record
+from schema import Attachment, Rejected
 
 RECORD_ID = "pat_7f3c9a21-4be8-4d0f-9c17-2a6e5b8d41f0"
 LETTER = Attachment("letter.pdf", b"%PDF-1.4")
@@ -37,8 +36,8 @@ async def test_the_tool_searches_the_record_in_the_runs_context(monkeypatch):
         searched.append((query, patient_id))
         return [{"chunk_id": "c1", "text": "Allergy: ibuprofen"}]
 
-    monkeypatch.setattr(agent, "search_record", _search_record)
-    runtime = SimpleNamespace(context=RecordContext(RECORD_ID))
+    monkeypatch.setattr(tools, "search_record", _search_record)
+    runtime = SimpleNamespace(state={"record_id": RECORD_ID})
 
     result = await search_patient_record.coroutine("allergies", runtime)
 
@@ -50,33 +49,60 @@ async def test_answer_runs_the_graph_with_the_callers_record(monkeypatch):
     invoked = []
 
     class _Graph:
-        async def ainvoke(self, state, *, context):
-            invoked.append((state, context))
+        async def ainvoke(self, state):
+            invoked.append(state)
             return {"messages": [SimpleNamespace(type="ai", content="reply")]}
 
     monkeypatch.setattr(agent, "build_agent", _Graph)
     messages = [{"role": "user", "content": "Can I take ibuprofen?"}]
 
     assert await answer(messages, record_id=RECORD_ID) == "reply"
-    assert invoked == [({"messages": messages}, RecordContext(RECORD_ID))]
+    assert invoked == [
+        {
+            "messages": messages,
+            "record_id": RECORD_ID,
+            "attachments": (),
+            "user_id": None,
+            "conversation_id": None,
+        }
+    ]
+
+
+async def test_answer_hands_the_stored_conversation_to_the_tools(monkeypatch):
+    invoked = []
+
+    class _Graph:
+        async def ainvoke(self, state):
+            invoked.append(state)
+            return {"messages": [SimpleNamespace(type="ai", content="reply")]}
+
+    monkeypatch.setattr(agent, "build_agent", _Graph)
+    user, conversation = uuid.uuid4(), uuid.uuid4()
+
+    await answer([], record_id=RECORD_ID, user_id=user, conversation_id=conversation)
+
+    assert (invoked[0]["user_id"], invoked[0]["conversation_id"]) == (
+        user,
+        conversation,
+    )
 
 
 async def test_answer_hands_the_attachments_to_the_tools(monkeypatch):
     invoked = []
 
     class _Graph:
-        async def ainvoke(self, state, *, context):
-            invoked.append(context)
+        async def ainvoke(self, state):
+            invoked.append(state)
             return {"messages": [SimpleNamespace(type="ai", content="reply")]}
 
     monkeypatch.setattr(agent, "build_agent", _Graph)
 
     assert await answer([], record_id=RECORD_ID, attachments=[LETTER]) == "reply"
-    assert invoked == [RecordContext(RECORD_ID, (LETTER,))]
+    assert [s["attachments"] for s in invoked] == [(LETTER,)]
 
 
 def _runtime(attachments=(LETTER,)):
-    return SimpleNamespace(context=RecordContext(RECORD_ID, attachments))
+    return SimpleNamespace(state={"record_id": RECORD_ID, "attachments": attachments})
 
 
 @pytest.fixture
@@ -88,7 +114,7 @@ def added(monkeypatch) -> list:
         calls.append((attachment, record_id))
         return 3
 
-    monkeypatch.setattr(agent, "add_document", _add)
+    monkeypatch.setattr(tools, "add_document", _add)
     return calls
 
 
@@ -114,7 +140,7 @@ async def test_a_rejected_document_reports_the_reason(monkeypatch):
     async def _add(*_):
         raise Rejected("not a medical document")
 
-    monkeypatch.setattr(agent, "add_document", _add)
+    monkeypatch.setattr(tools, "add_document", _add)
 
     result = await add_patient_document.coroutine("letter.pdf", _runtime())
 
