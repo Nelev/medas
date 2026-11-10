@@ -13,6 +13,7 @@ memory of its own, nothing it does not need to do that.
 import asyncio
 import json
 import os
+import uuid
 from collections.abc import Sequence
 from functools import lru_cache
 
@@ -98,7 +99,12 @@ def build_agent():
 
 
 async def answer(
-    messages: list[dict], *, record_id: str, attachments: Sequence[Attachment] = ()
+    messages: list[dict],
+    *,
+    record_id: str,
+    user_id: uuid.UUID | None = None,
+    conversation_id: uuid.UUID | None = None,
+    attachments: Sequence[Attachment] = (),
 ) -> str:
     """Answer the last turn of `messages`, in the context of the ones before.
 
@@ -109,6 +115,9 @@ async def answer(
     default, so a caller that forgets it fails rather than searching the
     wrong patient's record.
 
+    `user_id` and `conversation_id` say which stored conversation the export
+    tool may read; without them it has nothing to export.
+
     `attachments` are the PDFs sent with the last turn, the only files the
     document tools can verify and store.
     """
@@ -118,6 +127,8 @@ async def answer(
                 "messages": messages,
                 "record_id": record_id,
                 "attachments": tuple(attachments),
+                "user_id": user_id,
+                "conversation_id": conversation_id,
             }
         )
     except OpenAIError as exc:

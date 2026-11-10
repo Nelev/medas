@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -51,8 +52,9 @@ async def dispose_engine() -> None:
     _session_factory = None
 
 
-async def get_session() -> AsyncIterator[AsyncSession]:
-    """FastAPI dependency yielding a session that rolls back on error."""
+@asynccontextmanager
+async def open_session() -> AsyncIterator[AsyncSession]:
+    """A session that rolls back on error, for code outside a request."""
     if _session_factory is None:
         raise RuntimeError("Database engine is not initialised.")
 
@@ -62,3 +64,9 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         except Exception:
             await session.rollback()
             raise
+
+
+async def get_session() -> AsyncIterator[AsyncSession]:
+    """FastAPI dependency yielding a session that rolls back on error."""
+    async with open_session() as session:
+        yield session

@@ -7,10 +7,12 @@ import json
 from langchain.tools import ToolRuntime, tool
 from starlette.concurrency import run_in_threadpool
 
+from database.database import open_session
 from langchain_agent import health_sources
 from langchain_agent.documents import add_document
 from langchain_agent.export import export_turns
 from langchain_agent.state import RecordState
+from model import list_messages
 from rag_pipeline.search import search_record
 from schema import Attachment, Rejected
 
@@ -58,6 +60,22 @@ async def add_patient_document(
     return _reply(document, "stored", chunks=chunks)
 
 
+async def _stored_turns(runtime: ToolRuntime[None, RecordState]) -> list[dict]:
+    """The conversation as the patient sees it, read from the database.
+
+    The ids come from the run's state, so the model can export this
+    conversation and no other, and the read is scoped to the user in the same
+    statement. Empty when the run has no conversation, or it is gone.
+    """
+    user_id = runtime.state.get("user_id")
+    conversation_id = runtime.state.get("conversation_id")
+    if user_id is None or conversation_id is None:
+        return []
+    async with open_session() as session:
+        stored = await list_messages(session, conversation_id, user_id=user_id)
+    return [{"role": m["role"], "content": m["text"]} for m in stored]
+
+
 @tool
 async def export_conversation(
     runtime: ToolRuntime[None, RecordState], format: str = "pdf"
@@ -65,14 +83,9 @@ async def export_conversation(
     """Export this conversation as a file, when the patient asks for it.
     `format` is csv, json or pdf; leave it out, or pass anything
     else, and the file is a PDF."""
-    # The turns come from the run's own state, so there is nothing for the
-    # model to name: it can export this conversation and no other.
-    turns = [
-        {"role": "user" if m.type == "human" else "assistant", "content": m.content}
-        for m in runtime.state["messages"]
-        # Tool calls and their results are the agent's workings, not the chat.
-        if m.type in ("human", "ai") and m.content
-    ]
+    turns = await _stored_turns(runtime)
+    if not turns:
+        return json.dumps({"status": "no conversation"})
     file, used = await run_in_threadpool(export_turns, turns, format)
     return json.dumps(
         {

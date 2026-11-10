@@ -217,6 +217,7 @@ class AgentCalls(list):
     def __init__(self) -> None:
         super().__init__()
         self.record_ids: list[str] = []
+        self.owners: list[tuple[uuid.UUID, uuid.UUID]] = []
 
 
 @pytest.fixture(autouse=True)
@@ -234,9 +235,10 @@ def stub_the_agent(monkeypatch):
     """
     calls = AgentCalls()
 
-    async def _answer(turns, *, record_id, attachments=()):
+    async def _answer(turns, *, record_id, user_id, conversation_id, attachments=()):
         calls.append(turns)
         calls.record_ids.append(record_id)
+        calls.owners.append((user_id, conversation_id))
         return AGENT_REPLY
 
     monkeypatch.setattr(controller.conversation, "ask_agent", _answer)
@@ -253,7 +255,7 @@ async def test_a_json_reply_is_read_for_its_message_and_triage_code(
     what the badge renders from and what an audit reads later.
     """
 
-    async def _json_answer(turns, *, record_id, attachments=()):
+    async def _json_answer(turns, *, record_id, **_):
         return json.dumps(
             {
                 "message": "Worth seeing your GP this week.",
@@ -308,7 +310,7 @@ async def test_a_prose_reply_is_kept_as_the_answer(
 async def test_ask_when_the_agent_fails_is_503_and_keeps_a_reply(
     client, fake_session, monkeypatch
 ):
-    async def _fail(turns, *, record_id, attachments=()):
+    async def _fail(turns, *, record_id, **_):
         raise AgentUnavailable
 
     monkeypatch.setattr(controller.conversation, "ask_agent", _fail)
@@ -722,6 +724,16 @@ async def test_the_agent_searches_the_signed_in_users_record(
     await client.post("/ask", params=params, json=NEW_MESSAGE)
 
     assert stub_the_agent.record_ids == [f"pat_{USER_ID}"]
+
+
+async def test_the_agent_is_told_whose_conversation_it_is_in(
+    client, fake_session, stub_the_agent
+):
+    # The export tool reads the thread back with these two ids, so they must
+    # be the signed-in user and the conversation the answer is stored in.
+    await client.post("/ask", json=NEW_MESSAGE)
+
+    assert stub_the_agent.owners == [(USER_ID, fake_session.conversation_id)]
 
 
 @pytest.mark.parametrize(

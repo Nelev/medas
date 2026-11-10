@@ -1,5 +1,6 @@
 """What a run carries besides its messages, for the tools to read."""
 
+import uuid
 from typing import NotRequired
 
 from langchain.agents import AgentState
@@ -17,6 +18,10 @@ class RecordState(AgentState):
     """
 
     record_id: str
+    # Whose conversation this is, for the tool that reads it back: the ids the
+    # server holds, so the model cannot export anyone else's.
+    user_id: NotRequired[uuid.UUID]
+    conversation_id: NotRequired[uuid.UUID]
     # The PDFs sent with this question, the only ones the document tools can
     # reach.
     attachments: NotRequired[tuple[Attachment, ...]]

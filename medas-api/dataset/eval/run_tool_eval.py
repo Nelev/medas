@@ -28,6 +28,10 @@ async def _add_document(attachment, record_id):
     return 3
 
 
+async def _stored_turns(runtime):
+    return [{"role": "user", "content": "Can I take ibuprofen?"}]
+
+
 def _export_turns(turns, fmt):
     return "conversation-eval.pdf", "pdf"
 
@@ -92,6 +96,7 @@ async def _run_case(i: int, case: dict, agent) -> dict:
 async def main() -> None:
     tools_module.search_record = _search_record
     tools_module.add_document = _add_document
+    tools_module._stored_turns = _stored_turns
     tools_module.export_turns = _export_turns
     agent = build_agent()
 

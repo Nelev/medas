@@ -6,6 +6,7 @@ the tool runs.
 """
 
 import json
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -57,8 +58,33 @@ async def test_answer_runs_the_graph_with_the_callers_record(monkeypatch):
 
     assert await answer(messages, record_id=RECORD_ID) == "reply"
     assert invoked == [
-        {"messages": messages, "record_id": RECORD_ID, "attachments": ()}
+        {
+            "messages": messages,
+            "record_id": RECORD_ID,
+            "attachments": (),
+            "user_id": None,
+            "conversation_id": None,
+        }
     ]
+
+
+async def test_answer_hands_the_stored_conversation_to_the_tools(monkeypatch):
+    invoked = []
+
+    class _Graph:
+        async def ainvoke(self, state):
+            invoked.append(state)
+            return {"messages": [SimpleNamespace(type="ai", content="reply")]}
+
+    monkeypatch.setattr(agent, "build_agent", _Graph)
+    user, conversation = uuid.uuid4(), uuid.uuid4()
+
+    await answer([], record_id=RECORD_ID, user_id=user, conversation_id=conversation)
+
+    assert (invoked[0]["user_id"], invoked[0]["conversation_id"]) == (
+        user,
+        conversation,
+    )
 
 
 async def test_answer_hands_the_attachments_to_the_tools(monkeypatch):

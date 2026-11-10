@@ -154,7 +154,11 @@ async def answer_and_store(
     # convention langchain_agent/patient.py owns.
     try:
         reply = await ask_agent(
-            turns, record_id=record_id(user_id), attachments=attachments
+            turns,
+            record_id=record_id(user_id),
+            user_id=user_id,
+            conversation_id=conversation_id,
+            attachments=attachments,
         )
     except AgentUnavailable:
         # The question is already committed, so leave an answer beside it
