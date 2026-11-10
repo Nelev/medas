@@ -116,6 +116,7 @@ yarn install
 | `CLERK_SECRET_KEY`                                      | medas-api — verifying session tokens, and the email lookup on a first sign-in | none                        | The API refuses to start                  |
 | `CLERK_AUTHORIZED_PARTIES`                              | medas-api — the origins a token may be issued for, as a JSON list             | `["http://localhost:3000"]` | Every request is `401`                    |
 | `CLERK_JWT_KEY`                                         | medas-api — Clerk's public key, to verify tokens without a network call       | none (optional)             | Tokens are verified through Clerk instead |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`                    | medas-api — where traces of the agent's runs are sent (OTLP over HTTP)        | none (optional)             | No traces are sent; the API works the same |
 
 The Clerk keys go in `medas-ui/.env.local`, and nobody needs to copy them by hand: `yarn dlx clerk@latest init` writes development keys there, for an unclaimed app when you are signed out of Clerk. `yarn dlx clerk@latest auth login` claims it later. The build does not need them, so CI runs without them. medas-api needs the same `CLERK_SECRET_KEY` in `medas-api/.env`; its tests use a placeholder and generate their own signing key, so its CI does not need it either.
 
