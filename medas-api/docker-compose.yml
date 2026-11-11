@@ -1,6 +1,8 @@
 # Local Postgres with pgvector. pgvector has no official Windows build, so the
 # database runs from the upstream image instead of a native install. It listens
-# on 5433 so a native Postgres can keep 5432; point DATABASE_PORT at it.
+# on DATABASE_PORT, the port the app connects to, so the two cannot disagree;
+# 5433 when that is unset, so a native Postgres can keep 5432. Pick another
+# when 5433 is taken, for example by another project's database.
 #
 # Credentials are read from .env next to this file, the same values the app
 # composes its DSN from, so there is one source of truth.
@@ -15,7 +17,7 @@ services:
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
       POSTGRES_DB: ${DATABASE_NAME}
     ports:
-      - "5433:5432"
+      - "${DATABASE_PORT:-5433}:5432"
     volumes:
       # Postgres 18 images keep data in a versioned subdirectory of this path,
       # so the volume is mounted at the parent. Named, so it survives
