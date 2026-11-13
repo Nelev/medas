@@ -14,6 +14,8 @@ dataset/
   generate_pdfs.py               rebuilds the PDFs
   eval/questions.jsonl           questions, the sources each answer must cite, the expected severity
   eval/tool_cases.py             tool-calling cases (see the root README)
+  traffic/queries.yaml           normal, edge-case and adversarial questions for the traffic generator
+  traffic/send_traffic.py        sends them to the agent with tracing on (see the root README)
 ```
 
 Rebuild the PDFs (reportlab and pypdf come from `--with`, so they don't end up in the lockfile):

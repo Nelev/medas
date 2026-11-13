@@ -7,6 +7,7 @@ for what a trace holds, and what it never does.
 from tracing.handler import TraceHandler
 from tracing.runtime import (
     TracingMiddleware,
+    active_handler,
     handler_for,
     start_tracing,
     stop_tracing,
@@ -18,6 +19,7 @@ __all__ = [
     "TraceHandler",
     "TracingMiddleware",
     "TracingSettings",
+    "active_handler",
     "get_tracing_settings",
     "handler_for",
     "start_tracing",
