@@ -69,6 +69,18 @@ async def unavailable(query: str) -> str:
 
 
 @tool
+async def slow(query: str) -> str:
+    """A source that timed out, and says so."""
+    return json.dumps({"error": "source timed out"})
+
+
+@tool
+async def odd(query: str) -> str:
+    """A tool that reports a failure in words of its own."""
+    return json.dumps({"error": f"no luck with {PASSAGE}"})
+
+
+@tool
 async def broken(query: str) -> str:
     """A tool whose error quotes what it was given."""
     raise ValueError(f"cannot read: {PASSAGE}")
@@ -150,6 +162,38 @@ async def test_a_tool_that_reports_a_failure_without_raising_is_a_failed_span(ex
     # The run went on and answered, so the request as a whole did not fail.
     (root,) = named(spans, "invoke_agent")
     assert root.status.status_code is not StatusCode.ERROR
+
+
+async def test_a_tools_own_reason_for_a_failure_is_its_status_message(exporter):
+    answer = AIMessage(content="I could not look that up.")
+    await run(exporter, scripted(calling("slow"), answer), slow)
+    # The exporter keeps every run's spans, so this is both runs'.
+    spans = await run(exporter, scripted(calling("odd"), answer), odd)
+
+    timed_out, other = named(spans, "execute_tool")
+    assert timed_out.status.description == "source timed out"
+    # Any other reason may quote what the tool was given, so it is left off.
+    assert other.attributes["error.type"] == "ToolReportedError"
+    assert other.status.description is None
+
+
+@pytest.mark.parametrize(
+    ("reply", "shape"),
+    [
+        ('{"message": "Rest.", "severity": "S4", "confidence": "high"}', "ok"),
+        ('{"message": "Rest.", "severity": "urgent"}', "no_severity"),
+        ('{"answer": "Rest."}', "malformed"),
+        ("Rest.", "malformed"),
+    ],
+)
+async def test_the_root_says_whether_the_reply_had_the_asked_for_shape(
+    exporter, reply, shape
+):
+    spans = await run(exporter, scripted(AIMessage(content=reply)))
+
+    (root,) = named(spans, "invoke_agent")
+    assert root.attributes["medas.reply.format"] == shape
+    assert "Rest." not in str(dict(root.attributes))
 
 
 async def test_a_tool_that_raises_leaves_its_exceptions_type_and_not_its_message(

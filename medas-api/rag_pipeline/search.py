@@ -9,12 +9,15 @@ from typing import Any
 from langchain_core.documents import Document
 from langchain_core.runnables import RunnableLambda
 
+import faults
 from rag_pipeline.vector_store import get_vector_store
 
 __all__ = ["search_record"]
 
 
 async def _nearest(request: dict[str, Any]) -> list[tuple[Document, float]]:
+    if faults.finds_nothing(request["query"]):
+        return []
     return await get_vector_store().asimilarity_search_with_score(
         request["query"], k=request["k"], filter={"patient_id": request["patient_id"]}
     )

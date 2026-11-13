@@ -14,6 +14,8 @@ import httpx
 from defusedxml import DefusedXmlException
 from defusedxml import ElementTree as SafeET
 
+import faults
+
 __all__ = ["SOURCE_ERRORS", "search_medlineplus", "search_pubmed"]
 
 # What a source being down, or sending something unreadable, raises.
@@ -27,7 +29,8 @@ MAX_CHARS = 700
 
 
 async def _get(url: str, params: dict) -> httpx.Response:
-    async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+    timeout = faults.TIMED_OUT_S if faults.times_out() else TIMEOUT
+    async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.get(url, params=params)
     response.raise_for_status()
     return response

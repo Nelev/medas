@@ -1,7 +1,7 @@
 """Send the questions in queries.yaml to the agent, traced, for TraceScan.
 
     uv run python -m dataset.traffic.send_traffic [--repeat N] [--kinds normal,edge]
-        [--limit N] [--concurrency N] [--seed N] [--timeout SECONDS]
+        [--ids N01,E03] [--limit N] [--concurrency N] [--seed N] [--timeout SECONDS]
 
 Each question is one agent run as the seeded patient, made in process through
 `langchain_agent.agent.answer`, the function `/ask` calls: the same agent,
@@ -87,13 +87,19 @@ def plan(
     queries: Sequence[Query],
     *,
     kinds: Sequence[str] = KINDS,
+    ids: Sequence[str] | None = None,
     repeat: int = 1,
     limit: int | None = None,
     seed: int | None = None,
 ) -> list[Query]:
-    """What a run sends: the questions of `kinds`, each `repeat` times,
-    shuffled (the same order for the same seed), then cut to `limit`."""
-    chosen = [query for query in queries if query.kind in kinds] * repeat
+    """What a run sends: the questions of `kinds` (and of `ids`, when
+    given), each `repeat` times, shuffled (the same order for the same seed),
+    then cut to `limit`."""
+    chosen = [
+        query
+        for query in queries
+        if query.kind in kinds and (ids is None or query.id in ids)
+    ] * repeat
     random.Random(seed).shuffle(chosen)  # noqa: S311 - an order, not a secret
     return chosen if limit is None else chosen[:limit]
 
@@ -151,6 +157,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=",".join(KINDS),
         help="comma-separated kinds to send (default: all)",
     )
+    parser.add_argument("--ids", help="comma-separated question ids to send")
     parser.add_argument("--limit", type=int, help="send at most N questions")
     parser.add_argument("--concurrency", type=int, default=CONCURRENCY)
     parser.add_argument("--seed", type=int, help="shuffle the same way every time")
@@ -159,6 +166,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     args.kinds = [kind.strip() for kind in args.kinds.split(",") if kind.strip()]
     if unknown := set(args.kinds) - set(KINDS):
         parser.error(f"unknown kinds: {', '.join(sorted(unknown))}")
+    args.ids = (
+        [i.strip() for i in args.ids.split(",") if i.strip()] if args.ids else None
+    )
     if args.repeat < 1 or args.concurrency < 1:
         parser.error("--repeat and --concurrency must be at least 1")
     return args
@@ -166,9 +176,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 async def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
+    known = load_queries()
+    if args.ids and (unknown := set(args.ids) - {query.id for query in known}):
+        raise SystemExit(f"Unknown question ids: {', '.join(sorted(unknown))}")
     queries = plan(
-        load_queries(),
+        known,
         kinds=args.kinds,
+        ids=args.ids,
         repeat=args.repeat,
         limit=args.limit,
         seed=args.seed,
@@ -180,6 +194,7 @@ async def main(argv: Sequence[str] | None = None) -> None:
 
     # Imported here: importing the agent must not need the environment.
     from database.database import dispose_engine, init_engine
+    from faults import get_faults
     from langchain_agent.agent import answer
     from rag_pipeline.record import MEDICAL_HISTORY_PATH
     from rag_pipeline.vector_store import init_vector_store
@@ -203,6 +218,8 @@ async def main(argv: Sequence[str] | None = None) -> None:
     engine = init_engine()
     try:
         await init_vector_store(engine)
+        on = get_faults().active()
+        print(f"Faults on: {', '.join(on) if on else 'none'}")
         print(f"Sending {len(queries)} questions, {args.concurrency} at a time")
         # Every task gather starts copies this context, handler included.
         with traced(handler):
