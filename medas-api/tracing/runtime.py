@@ -6,19 +6,27 @@ startup is not seen by the tasks that serve requests, so a middleware sets it
 at the start of each one.
 """
 
+import tomllib
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from pathlib import Path
 
 from langchain_core.tracers.context import register_configure_hook
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.semconv.schemas import Schemas
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from tracing.handler import AGENT, TraceHandler
-from tracing.settings import get_tracing_settings
+from tracing.settings import TracingSettings, get_tracing_settings
+
+# The semantic conventions the span names and attributes follow (the gen_ai
+# ones, with gen_ai.provider.name), sent with every trace as its schema URL.
+SCHEMA_URL = Schemas.V1_37_0.value
+PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 
 _active: ContextVar[TraceHandler | None] = ContextVar("medas_tracing", default=None)
 # Every run LangChain starts, and every run below it, gets the handler in the
@@ -43,13 +51,32 @@ def handler_for(provider: TracerProvider) -> TraceHandler:
     return TraceHandler(provider.get_tracer("medas.tracing"))
 
 
+def project_version(pyproject: Path = PYPROJECT) -> str | None:
+    """The version in pyproject.toml, or None when the file is not there."""
+    try:
+        with pyproject.open("rb") as file:
+            return tomllib.load(file)["project"]["version"]
+    except OSError, KeyError, tomllib.TOMLDecodeError:
+        return None
+
+
+def resource(settings: TracingSettings) -> Resource:
+    """What every trace says about where it came from: the app, its version
+    and the conventions its spans follow."""
+    attributes = {"service.name": AGENT}
+    if version := settings.service_version or project_version():
+        attributes["service.version"] = version
+    return Resource(attributes, SCHEMA_URL)
+
+
 def start_tracing() -> None:
     """Start exporting traces, if an endpoint is configured. Call once, at startup."""
     global _provider, _handler
-    endpoint = get_tracing_settings().otel_exporter_otlp_traces_endpoint
+    settings = get_tracing_settings()
+    endpoint = settings.otel_exporter_otlp_traces_endpoint
     if not endpoint:
         return
-    _provider = TracerProvider(resource=Resource({"service.name": AGENT}))
+    _provider = TracerProvider(resource=resource(settings))
     # Spans are sent in batches from a background thread, so a request never
     # waits for the collector, and a collector that is down loses spans, not
     # requests.

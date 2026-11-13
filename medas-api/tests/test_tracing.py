@@ -15,6 +15,7 @@ from langchain_core.documents import Document
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.tools import tool
+from opentelemetry.exporter.otlp.proto.common.trace_encoder import encode_spans
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -23,6 +24,7 @@ from opentelemetry.trace import SpanKind, StatusCode
 from rag_pipeline import search
 from tracing import (
     TracingMiddleware,
+    TracingSettings,
     get_tracing_settings,
     handler_for,
     runtime,
@@ -226,3 +228,29 @@ def test_tracing_starts_only_with_an_endpoint(monkeypatch):
 
     stop_tracing()
     assert runtime._handler is None
+
+
+def test_every_trace_names_the_app_its_version_and_its_conventions(tmp_path):
+    made = runtime.resource(TracingSettings(service_version="abc1234"))
+    assert made.attributes["service.name"] == "medas"
+    assert made.attributes["service.version"] == "abc1234"
+    assert made.schema_url == "https://opentelemetry.io/schemas/1.37.0"
+
+    # Unset, the version comes from pyproject.toml; with no file, there is none.
+    unset = runtime.resource(TracingSettings(service_version=None))
+    assert unset.attributes["service.version"] == runtime.project_version()
+    assert runtime.project_version(tmp_path / "missing.toml") is None
+
+
+def test_the_export_carries_the_version_and_the_schema_url():
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider(
+        resource=runtime.resource(TracingSettings(service_version="abc1234"))
+    )
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    provider.get_tracer("test").start_span("invoke_agent medas").end()
+
+    (sent,) = encode_spans(exporter.get_finished_spans()).resource_spans
+    assert sent.schema_url == "https://opentelemetry.io/schemas/1.37.0"
+    attributes = {a.key: a.value.string_value for a in sent.resource.attributes}
+    assert attributes["service.version"] == "abc1234"
