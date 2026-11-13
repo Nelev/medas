@@ -1383,6 +1383,7 @@ dev = [
     { name = "cryptography" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 
@@ -1422,6 +1423,7 @@ dev = [
     { name = "cryptography", specifier = ">=50.0.1" },
     { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-asyncio", specifier = ">=1.2" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "ruff", specifier = ">=0.16.7" },
 ]
 

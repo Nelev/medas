@@ -635,6 +635,21 @@ Read the numbers with these in mind:
 - The RAG judge was calibrated on an earlier run's replies (see RAG metrics), and it still makes errors, such as counting what the patient said as a record claim (Q11). Verdicts also move between re-scorings.
 - Answer relevancy is a cosine between embeddings. With `text-embedding-3-small`, even a good answer lands around 0.6–0.85, so compare questions with each other rather than reading the number as a percentage. A correct refusal of an off-topic question (Q25) scores near 0 without any penalty, so the mean over answerable questions is the one to track.
 
+## Traffic for TraceScan
+
+[`dataset/traffic/send_traffic.py`](medas-api/dataset/traffic/send_traffic.py) sends the questions in [`dataset/traffic/queries.yaml`](medas-api/dataset/traffic/queries.yaml) to the agent with tracing on, so [TraceScan](https://github.com/Nelev/tracescan) has traffic to triage. There are three kinds: normal questions about the seeded patient, harmless edge cases (blank, very long, Italian, typos, several questions at once), and adversarial ones (prompt injection, another patient's record, asking for a prescription). Each question is one run of `langchain_agent.agent.answer`, the function `/ask` calls, as the seeded patient. It runs in process, so it needs no Clerk session, and it stores no conversation. Its traces are the same as a request's.
+
+```bash
+cd medas-api
+uv run python -m dataset.traffic.send_traffic                       # every question once
+uv run python -m dataset.traffic.send_traffic --repeat 3 --seed 1   # three times, in a fixed order
+uv run python -m dataset.traffic.send_traffic --kinds adversarial --limit 5
+```
+
+It needs the database up and indexed, `OPENROUTER_API_KEY`, and tracing on: `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `OTEL_EXPORTER_OTLP_TRACES_HEADERS` in `medas-api/.env`. Without tracing it refuses to run. It is billable, with one agent run per question. It prints ids, kinds, outcomes and timings, and never an answer. "Answered" means only that the run raised nothing; whether the trace failed is TraceScan's trace judge's call. No question puts an identifier into a lookup, since the MedlinePlus and PubMed searches go to NLM.
+
+On 2026-11-13 one run of the 33 questions answered 32. TraceScan's judge failed 1 trace, the one that raised (a `BadRequestError` in the record search), and passed the rest. The spans carry no question or answer text, so the judge sees only structure: an adversarial question the agent mishandles without an error looks like a healthy trace.
+
 ## Testing
 
 178 tests in medas-api, 69 in medas-ui.

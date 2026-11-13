@@ -94,6 +94,15 @@ def stop_tracing() -> None:
     _provider = _handler = None
 
 
+def active_handler() -> TraceHandler | None:
+    """The handler start_tracing made, or None while tracing is off.
+
+    For code that runs the agent outside a request (a script), which the
+    middleware never sees: it wraps its runs in `traced(handler)` itself.
+    """
+    return _handler
+
+
 class TracingMiddleware:
     """Makes the handler the one LangChain uses for the length of a request."""
 
