@@ -16,6 +16,11 @@ class TracingSettings(BaseSettings):
     # collector at http://localhost:8010/v1/traces. Unset, the usual case,
     # means no tracing at all: no spans are made and nothing is sent.
     otel_exporter_otlp_traces_endpoint: str | None = None
+    # The app's version on every trace (service.version), for example the git
+    # SHA a deploy sets as SERVICE_VERSION. Unset, the version in pyproject.toml
+    # is used. TraceScan compares a failure only with healthy calls of the same
+    # version, so a deploy that changes behavior should change this.
+    service_version: str | None = None
 
 
 @lru_cache
