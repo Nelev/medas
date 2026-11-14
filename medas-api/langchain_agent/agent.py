@@ -22,6 +22,7 @@ from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from openai import OpenAIError
 
+import faults
 from langchain_agent.assistant_general_prompt import ASSISTANT_SYSTEM_PROMPT
 from langchain_agent.middleware import MessageTrimmingMiddleware
 from langchain_agent.state import RecordState
@@ -80,7 +81,7 @@ def build_agent():
     """
     return create_agent(
         model=ChatOpenAI(
-            model=MODEL_NAME,
+            model=faults.get_faults().weak_model or MODEL_NAME,
             base_url=OPENROUTER_BASE_URL,
             api_key=os.getenv("OPENROUTER_API_KEY"),
             extra_body={"response_format": {"type": "json_object"}},
@@ -92,8 +93,9 @@ def build_agent():
             search_medlineplus,
             search_pubmed,
         ],
-        system_prompt=ASSISTANT_SYSTEM_PROMPT,
-        middleware=[MessageTrimmingMiddleware()],
+        system_prompt=faults.truncated(ASSISTANT_SYSTEM_PROMPT),
+        # The fault switches (faults.py) do nothing unless one is on.
+        middleware=[MessageTrimmingMiddleware(), faults.FaultMiddleware()],
         state_schema=RecordState,
     )
 

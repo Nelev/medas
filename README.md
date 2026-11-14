@@ -644,11 +644,39 @@ cd medas-api
 uv run python -m dataset.traffic.send_traffic                       # every question once
 uv run python -m dataset.traffic.send_traffic --repeat 3 --seed 1   # three times, in a fixed order
 uv run python -m dataset.traffic.send_traffic --kinds adversarial --limit 5
+uv run python -m dataset.traffic.send_traffic --ids N01,N06,N10       # these questions only
 ```
 
 It needs the database up and indexed, `OPENROUTER_API_KEY`, and tracing on: `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `OTEL_EXPORTER_OTLP_TRACES_HEADERS` in `medas-api/.env`. Without tracing it refuses to run. It is billable, with one agent run per question. It prints ids, kinds, outcomes and timings, and never an answer. "Answered" means only that the run raised nothing; whether the trace failed is TraceScan's trace judge's call. No question puts an identifier into a lookup, since the MedlinePlus and PubMed searches go to NLM.
 
 On 2026-11-13 one run of the 33 questions answered 32. TraceScan's judge failed 1 trace, the one that raised (a `BadRequestError` in the record search), and passed the rest. The spans carry no question or answer text, so the judge sees only structure: an adversarial question the agent mishandles without an error looks like a healthy trace.
+
+## Fault switches
+
+[`faults.py`](medas-api/faults.py) holds six known bugs, each turned on by one environment variable, so TraceScan can be measured on failures whose cause is known. All are off unless set. They break the assistant on purpose, so set them only for a test run, on the command line rather than in `.env`, and restart the process after changing one.
+
+| Variable                           | What breaks                                                                                                                               | How it shows on a trace                                                                              | The cause to name                                                 | Questions that trigger it |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------- |
+| `FAULT_EMPTY_RETRIEVAL=medication` | The record search returns nothing when the model's query is about one category (`medication`, `allergy` or `appointment`, by keyword)     | `retrieval record_chunks` with `retrieval.hits` 0, often searched again                              | The record search drops every passage for that category           | N01, N06, N10, N13        |
+| `FAULT_TOOL_SCHEMA=1`              | `search_patient_record` is called with `search_query` instead of `query`, as by a caller not updated after a rename                       | `execute_tool search_patient_record` fails with a pydantic `ValidationError`, every time             | The record tool's argument name no longer matches what it is sent | any record question       |
+| `FAULT_TRUNCATED_PROMPT=1`         | The system prompt is cut before its Output section, so the model no longer knows the reply's JSON shape                                   | No error; `medas.reply.format` on the root is `malformed`                                            | The system prompt lost its Output section                         | any question              |
+| `FAULT_CONTEXT_TOKENS=1000`        | The model is sent only this many tokens after the question, so a long search result is dropped with its call and the model searches again | The same search repeated many times in one run, then an answer; no error                             | The context budget is too small for the record's passages         | N03, N13 (long results)   |
+| `FAULT_WEAK_MODEL=<slug>`          | The agent runs on another OpenRouter model. With `google/gemma-4-31b-it` it answers record questions without calling a tool               | `chat google/gemma-4-31b-it` and nothing else: no tool call, no error                                | The model was swapped for one that does not use its tools         | any record question       |
+| `FAULT_UPSTREAM_TIMEOUT=0.5`       | This share of MedlinePlus and PubMed calls gets a 1 ms timeout, so the connection times out                                               | `execute_tool search_medlineplus` or `search_pubmed` with `ToolReportedError` and `source timed out` | The health sources time out                                       | N07, N08, N09, N11, N12   |
+
+```bash
+cd medas-api
+FAULT_TOOL_SCHEMA=1 uv run python -m dataset.traffic.send_traffic --ids N01,N03,N04,N13
+```
+
+The traffic generator prints the faults that are on before it sends. The weak model must be one the OpenRouter key's guardrail allows: a blocked one fails every call with a 404 instead (`OpenAIModelNotFoundError`), which is a different fault. `openai/gpt-4o-mini` is allowed but runs like the usual model, so it leaves no sign on a trace.
+
+Two things were added to the traces so these faults can be told apart, both fixed words and never text from a question, answer or record:
+
+- `medas.reply.format` on the root span: `ok` (the JSON object the prompt asks for, with a triage code), `no_severity` (the object without one) or `malformed` (not that object at all), as `utils.parse_agent_reply` reads the reply. A reply in prose, which the model sometimes writes for a red flag, is also `malformed`.
+- A health-source lookup that fails says why: `source timed out` or `source unavailable`. That reason is the failed span's status message (`tracing.handler.SAFE_TOOL_ERRORS`); any other reason a tool gives is left off.
+
+On 2026-11-13 each switch caused its failure on every question listed for it (the context budget on the two with long results). TraceScan then judged the 55 traces of that hour. It caught the broken schema (4 of 4), the truncated prompt (4 of 4), the timeouts and the empty searches, and diagnosed the first three by cause; the truncated prompt came back `unknown`, since the trace shows the reply was malformed but not why. It passed every trace of the small context and the weak model: a run that searches eight times, or answers without looking anything up, has no error and a well-formed reply. PubMed also failed once on its own with `source unavailable` (its rate limit, probably), a real failure that looks like the timeout fault.
 
 ## Testing
 

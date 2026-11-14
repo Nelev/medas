@@ -15,7 +15,9 @@ What goes on a span is names, counts, model ids, token usage and the type of an
 exception. Never a prompt, an answer, a tool's arguments or its result, a
 passage or anything else that could be about a patient: the inputs and outputs
 LangChain hands over are not read, except to count the passages a retrieval
-returned and to see whether a tool reported a failure.
+returned, to see whether a tool reported a failure (and which of the tools' own
+fixed reasons it gave), and to say whether the answer had the shape the prompt
+asks for (REPLY_FORMAT), never what it said.
 """
 
 import json
@@ -28,12 +30,23 @@ from openai import OpenAIError
 from opentelemetry import context, trace
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode, Tracer
 
+from utils import parse_agent_reply
+
 AGENT = "medas"
 # A step run under a name that starts like this is a retrieval, and the rest of
 # the name is what it searched (rag_pipeline/search.py).
 RETRIEVAL = "retrieval "
-# What a tool that failed without raising is recorded as (see _reports_failure).
+# What a tool that failed without raising is recorded as (see _reported_error).
 TOOL_REPORTED_ERROR = "ToolReportedError"
+# The reasons the tools give the model for a failed lookup (the `error` of
+# langchain_agent/tools.py's _lookup): fixed words of our own, so safe to keep
+# as the span's status message. Any other reason is left off.
+SAFE_TOOL_ERRORS = frozenset({"source unavailable", "source timed out"})
+# On the root span: whether the reply was the JSON object the prompt asks for,
+# with a triage code (ok), without one (no_severity), or not that object at all
+# (malformed), as utils.parse_agent_reply reads it. The only sign on a trace of
+# a reply that went wrong without anything raising.
+REPLY_FORMAT = "medas.reply.format"
 MESSAGE_MAX = 300
 
 
@@ -52,8 +65,10 @@ def _message_of(error: BaseException) -> str | None:
     return str(error)[:MESSAGE_MAX] if isinstance(error, OpenAIError) else None
 
 
-def _reports_failure(output: Any) -> bool:
-    """Whether a tool that returned normally told the model it had failed.
+def _reported_error(output: Any) -> str | None:
+    """What a tool that returned normally told the model about its failure:
+    None when it did not fail, its reason when that is one of
+    SAFE_TOOL_ERRORS, else an empty string.
 
     The tools catch what goes wrong with a source and answer the model with
     `{"error": ...}` instead of raising, so the run goes on. That is still a
@@ -61,11 +76,26 @@ def _reports_failure(output: Any) -> bool:
     """
     content = getattr(output, "content", output)
     if not isinstance(content, str) or not content.startswith("{"):
-        return False
+        return None
     try:
-        return "error" in json.loads(content)
+        found = json.loads(content)
     except ValueError:
-        return False
+        return None
+    if not isinstance(found, dict) or "error" not in found:
+        return None
+    reason = found["error"]
+    return reason if isinstance(reason, str) and reason in SAFE_TOOL_ERRORS else ""
+
+
+def _reply_format(outputs: Any) -> str | None:
+    """The REPLY_FORMAT of a finished agent run, or None when it has no reply."""
+    messages = outputs.get("messages") if isinstance(outputs, dict) else None
+    if not messages:
+        return None
+    _, triage = parse_agent_reply(getattr(messages[-1], "content", None))
+    if not triage:
+        return "malformed"
+    return "ok" if triage.get("severity") else "no_severity"
 
 
 class TraceHandler(BaseCallbackHandler):
@@ -166,8 +196,15 @@ class TraceHandler(BaseCallbackHandler):
             self._parents[run_id] = parent_run_id  # a step of the graph: no span
 
     def on_chain_end(self, outputs: Any, *, run_id: UUID, **kwargs: Any) -> None:
+        span = self._spans.get(run_id)
         if run_id in self._retrievals and isinstance(outputs, list):
             self._spans[run_id].set_attribute("retrieval.hits", len(outputs))
+        elif (
+            span is not None
+            and self._parents.get(run_id) is None
+            and (shape := _reply_format(outputs)) is not None
+        ):
+            span.set_attribute(REPLY_FORMAT, shape)
         self._end(run_id)
 
     def on_chain_error(
@@ -236,7 +273,11 @@ class TraceHandler(BaseCallbackHandler):
         )
 
     def on_tool_end(self, output: Any, *, run_id: UUID, **kwargs: Any) -> None:
-        self._end(run_id, TOOL_REPORTED_ERROR if _reports_failure(output) else None)
+        reported = _reported_error(output)
+        if reported is None:
+            self._end(run_id)
+        else:
+            self._end(run_id, TOOL_REPORTED_ERROR, reported or None)
 
     def on_tool_error(
         self, error: BaseException, *, run_id: UUID, **kwargs: Any

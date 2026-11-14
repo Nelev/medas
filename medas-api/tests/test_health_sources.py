@@ -133,3 +133,14 @@ def test_sources_go_at_the_end_of_the_message():
 def test_sources_go_after_a_prose_reply_and_never_after_nothing():
     assert agent._with_sources("Call 112.", ["https://x/0"]).endswith("- https://x/0")
     assert agent._with_sources("Call 112.", []) == "Call 112."
+
+
+async def test_a_source_that_times_out_says_so(monkeypatch):
+    async def _slow(_query):
+        raise httpx.ConnectTimeout("slow")
+
+    monkeypatch.setattr(sources, "search_medlineplus", _slow)
+
+    reply = await tools.search_medlineplus.coroutine("anything")
+
+    assert json.loads(reply) == {"error": "source timed out"}

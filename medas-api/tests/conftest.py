@@ -6,6 +6,7 @@ between tests.
 
 import pytest
 
+import faults
 from auth import get_auth_settings
 from database.settings import DbSettings, get_settings
 from ratelimit import limiter
@@ -32,6 +33,17 @@ def _reset_settings_cache():
 def _no_tracing_env(monkeypatch):
     """No test exports traces, whatever a developer's environment or .env says."""
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "")
+
+
+@pytest.fixture(autouse=True)
+def _no_faults(monkeypatch):
+    """Every fault switch off, whatever a developer's environment or .env says:
+    a test that wants one builds its own FaultSettings."""
+    for name in faults.FaultSettings.model_fields:
+        monkeypatch.delenv(f"FAULT_{name.upper()}", raising=False)
+    monkeypatch.setattr(
+        faults, "get_faults", lambda: faults.FaultSettings(_env_file=None)
+    )
 
 
 @pytest.fixture(autouse=True)

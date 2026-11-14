@@ -4,6 +4,7 @@ public health sources. Each is a LangChain tool; `agent.build_agent` lists them.
 
 import json
 
+import httpx
 from langchain.tools import ToolRuntime, tool
 from starlette.concurrency import run_in_threadpool
 
@@ -101,6 +102,11 @@ async def export_conversation(
 async def _lookup(source, query: str) -> str:
     try:
         return json.dumps(await source(query))
+    except httpx.TimeoutException:
+        # Said apart from the rest, and recorded on the trace
+        # (tracing.handler.SAFE_TOOL_ERRORS): a slow source and a broken one
+        # are fixed differently.
+        return json.dumps({"error": "source timed out"})
     except health_sources.SOURCE_ERRORS:
         # Say so, and let the model answer without it.
         return json.dumps({"error": "source unavailable"})

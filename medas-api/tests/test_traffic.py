@@ -59,6 +59,17 @@ def test_a_plan_keeps_the_kinds_asked_for_repeats_and_cuts():
     assert len(plan(QUERIES, repeat=3, limit=4, seed=1)) == 4
 
 
+def test_a_plan_can_be_cut_to_some_questions():
+    sent = plan(QUERIES, ids=["N01", "A01"], repeat=2, seed=1)
+
+    assert sorted(query.id for query in sent) == ["A01", "A01", "N01", "N01"]
+
+
+def test_ids_are_read_as_a_list():
+    assert parse_args(["--ids", "N01, E03"]).ids == ["N01", "E03"]
+    assert parse_args([]).ids is None
+
+
 async def test_every_question_gets_an_outcome_and_none_is_raised():
     async def ask(question):
         if question == "b":
